@@ -1,0 +1,28 @@
+# R
+*.Rhistory
+*.RData
+*.Ruserdata
+.Rproj.user/
+*.rdb
+*.rdx
+
+# Rust build artifacts
+src/rust/target/
+src/rust/vendor/
+src/.cargo/
+
+# Compiled shared objects
+src/*.so
+src/*.dll
+src/*.a
+src/masreml.so
+src/symbols.rds
+
+# Makevars generated
+src/Makevars
+src/Makevars.win
+
+# Package build
+*.tar.gz
+*.tgz
+/check/

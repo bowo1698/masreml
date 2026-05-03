@@ -1,0 +1,30 @@
+[package]
+name = "masreml"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "masreml"
+crate-type = ["staticlib"]
+
+[dependencies]
+extendr-api = { version = "0.7", features = ["ndarray"] }
+ndarray = { version = "0.15", features = ["rayon"] }
+rayon = "1.8"
+thiserror = "1.0"
+log = "0.4"
+libm = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ndarray-linalg = { version = "0.16", features = ["openblas-system"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ndarray-linalg = { version = "0.16", features = ["openblas-system"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+ndarray-linalg = { version = "0.16", features = ["openblas-static"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

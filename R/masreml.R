@@ -1,0 +1,337 @@
+#' Universal REML-BLUP for SNP and Microhaplotype Genomic Prediction
+#'
+#' Main interface for BLUP, GBLUP, and PBLUP using SNP additive,
+#' SNP dominance, and/or microhaplotype additive markers.
+#' Supports continuous and binary traits.
+#'
+#' @param y numeric vector of phenotypes (length n). Named vector
+#'   recommended for ID alignment. For binary trait, must contain
+#'   only 0 and 1.
+#' @param X fixed effects design matrix (n x c). If NULL, intercept
+#'   only is used.
+#' @param markers list of raw marker inputs (optional):
+#'   \itemize{
+#'     \item \code{snp_add}: matrix (n x m), raw genotype 0/1/2
+#'     \item \code{snp_dom}: matrix (n x m), raw genotype 0/1/2
+#'     \item \code{mh_add}: list of data.frames, one per chromosome
+#'   }
+#' @param G list of pre-built relationship matrices (optional):
+#'   \itemize{
+#'     \item \code{snp_add}: numeric matrix (n x n), SNP additive G
+#'     \item \code{snp_dom}: numeric matrix (n x n), SNP dominance D
+#'     \item \code{mh_add}: numeric matrix (n x n), MH additive Agh
+#'     \item \code{pedigree}: numeric matrix (n x n), pedigree A
+#'   }
+#' @param method character, REML algorithm for variance component estimation:
+#'   \itemize{
+#'     \item \code{"auto"} (default): AI-REML for continuous,
+#'       HE regression for binary
+#'     \item \code{"HE"}: Haseman-Elston regression (fast, one-step)
+#'     \item \code{"AI"}: Average Information REML (accurate, iterative)
+#'     \item \code{"EM"}: Expectation-Maximization REML (stable, slower)
+#'     \item \code{"HI"}: HE-initialized AI-REML
+#'   }
+#'   For binary trait, \code{"HE"} is recommended for speed.
+#'   Any method can be used but \code{"AI"} may be slow on working response.
+#' @param solver character, EBV solver:
+#'   \itemize{
+#'     \item \code{"auto"} (default): Cholesky for n < 10,000, PCG otherwise
+#'     \item \code{"cholesky"}: direct Cholesky factorization
+#'     \item \code{"pcg"}: preconditioned conjugate gradient (large n)
+#'   }
+#' @param max_iter integer, maximum REML iterations (default 100)
+#' @param tol numeric, convergence tolerance (default 1e-6)
+#' @param n_threads integer, number of threads (default: all physical cores)
+#' @param trait character, trait distribution:
+#'   \itemize{
+#'     \item \code{"continuous"} (default): Gaussian REML-BLUP
+#'     \item \code{"binary"}: 0/1 phenotype, single-step Laplace
+#'       approximation on liability scale
+#'   }
+#' @param link character, link function for binary trait:
+#'   \itemize{
+#'     \item \code{"logit"} (default): logistic link, sigma2_e = pi^2/3
+#'     \item \code{"probit"}: probit link, sigma2_e = 1
+#'   }
+#'
+#' @return Object of class \code{"masreml"} with elements:
+#'   \itemize{
+#'     \item \code{gebv}: named list of GEBV vectors per component
+#'     \item \code{total_gebv}: total GEBV (sum across components)
+#'     \item \code{fixed_effects}: fixed effect estimates
+#'     \item \code{varcomp}: list with \code{sigma2} and \code{h2}
+#'     \item \code{loglik}: restricted log-likelihood
+#'     \item \code{algorithm}: REML algorithm used
+#'     \item \code{solver}: EBV solver used
+#'     \item \code{converged}: logical, convergence status
+#'     \item \code{n_iter}: number of REML iterations
+#'     \item \code{n}: number of individuals
+#'     \item \code{call}: matched call
+#'   }
+#'   For binary trait (\code{trait = "binary"}), additional
+#'   \code{binary} slot contains:
+#'   \itemize{
+#'     \item \code{link}: link function used
+#'     \item \code{prevalence}: proportion of y = 1
+#'     \item \code{h2_liability}: h2 on liability scale
+#'     \item \code{h2_observed}: h2 on observed (0/1) scale
+#'       via Dempster-Falconer transformation
+#'     \item \code{auc}: Area Under ROC Curve (Wilcoxon-MWW)
+#'     \item \code{fitted}: fitted probabilities P(y = 1)
+#'     \item \code{converged}: always TRUE for single-step
+#'   }
+#'
+#' @references
+#' VanRaden (2008) Efficient methods to compute genomic predictions.
+#' \emph{J. Dairy Sci.} 91:4414-4423.
+#'
+#' Da (2015) Multi-allelic haplotype model for genomic prediction.
+#' \emph{BMC Genet.} 16:144.
+#'
+#' Dempster & Falconer (1950) Interpretation of high and low liability.
+#' \emph{Ann. Hum. Genet.} 31:195-203.
+#'
+#' Johnson & Thompson (1995) Restricted maximum likelihood estimation
+#' of variance components. \emph{J. Dairy Sci.} 78:449-456.
+#'
+#' @examples
+#' \dontrun{
+#' # ── Continuous trait ─────────────────────────────────────
+#' # SNP additive GBLUP
+#' fit <- masreml(y = y, markers = list(snp_add = W))
+#' summary(fit)
+#'
+#' # MH additive only
+#' fit <- masreml(y = y, markers = list(mh_add = mh_list))
+#'
+#' # Combined SNP additive + dominance
+#' fit <- masreml(
+#'   y       = y,
+#'   markers = list(snp_add = W, snp_dom = W),
+#'   method  = "AI"
+#' )
+#'
+#' # Pre-built G matrix
+#' fit <- masreml(y = y, G = list(snp_add = G))
+#'
+#' # ── Binary trait ─────────────────────────────────────────
+#' # Binary GBLUP (logit link, default HE)
+#' fit <- masreml(
+#'   y     = y_binary,
+#'   markers = list(snp_add = W),
+#'   trait = "binary"
+#' )
+#' summary(fit)
+#'
+#' # Binary with probit link
+#' fit <- masreml(
+#'   y     = y_binary,
+#'   markers = list(snp_add = W),
+#'   trait = "binary",
+#'   link  = "probit"
+#' )
+#'
+#' # Binary with EM-REML for variance components
+#' fit <- masreml(
+#'   y      = y_binary,
+#'   markers = list(snp_add = W),
+#'   trait  = "binary",
+#'   method = "EM"
+#' )
+#' }
+#'
+#' @export
+masreml <- function(
+    y,
+    X          = NULL,
+    markers    = NULL,
+    G          = NULL,
+    method     = "auto",
+    solver     = "auto",
+    max_iter   = 100L,
+    tol        = 1e-6,
+    n_threads  = NULL,
+    trait      = "continuous",   # "continuous" atau "binary"
+    link       = "logit"         # "logit" atau "probit" (hanya untuk binary)
+) {
+  call <- match.call()
+
+  # ── Input validation ────────────────────────────────────────
+  y <- .validate_y(y)
+  n <- length(y)
+  ids <- names(y)
+
+  X <- .prepare_X(X, n)
+
+  if (is.null(markers) && is.null(G)) {
+    stop("Provide at least one of 'markers' or 'G'.")
+  }
+
+  method <- match.arg(method, c("auto", "HE", "AI", "EM", "HI"))
+  solver <- match.arg(solver, c("auto", "cholesky", "pcg"))
+  trait  <- match.arg(trait,  c("continuous", "binary"))
+  link   <- match.arg(link,   c("logit", "probit"))
+  max_iter  <- as.integer(max_iter)
+  n_threads <- .resolve_threads(n_threads)
+
+  # ── Build G matrices ────────────────────────────────────────
+  message("Building relationship matrices...")
+  g_list <- .build_g_matrices(markers = markers, G = G, ids = ids)
+
+  # ── Route binary trait ──────────────────────────────────────
+  if (trait == "binary") {
+    message("Binary trait detected — running GLMM via Laplace approximation...")
+    method_binary <- if (method == "auto") "HE" else method
+    return(.masreml_binary(
+      y         = y,
+      X         = X,
+      g_list    = g_list,
+      link      = link,
+      method    = method_binary,
+      solver    = solver,
+      max_iter  = max_iter,
+      tol       = tol,
+      n_threads = n_threads,
+      ids       = ids,
+      call      = call
+    ))
+  }
+
+  # ── Resolve solver ──────────────────────────────────────────
+  solver_used <- if (solver == "auto") {
+    if (n < 10000L) "cholesky" else "pcg"
+  } else {
+    solver
+  }
+
+  # ── Run REML ────────────────────────────────────────────────
+  message(sprintf(
+    "Running REML [method=%s, n=%d, n_components=%d]...",
+    method, n, length(g_list)
+  ))
+
+  reml_result <- .run_reml(
+    y         = y,
+    X         = X,
+    g_list    = g_list,
+    method    = method,
+    max_iter  = max_iter,
+    tol       = tol,
+    n_threads = n_threads
+  )
+
+  # ── Check REML error ────────────────────────────────────────
+  if (!is.null(reml_result$error) && !is.na(reml_result$error)) {
+    stop(sprintf("REML failed: %s", reml_result$error))
+  }
+
+  # ── Solve EBV ───────────────────────────────────────────────
+  message(sprintf("Solving EBV [solver=%s]...", solver_used))
+
+  blup_result <- .solve_blup(
+    y          = y,
+    X          = X,
+    g_list     = g_list,
+    sigma2     = reml_result$sigma2,
+    solver     = solver_used,
+    max_iter   = max_iter,
+    tol        = tol
+  )
+
+  # ── Assemble output ─────────────────────────────────────────
+  .assemble_output(
+    y           = y,
+    ids         = ids,
+    g_names     = names(g_list),
+    reml_result = reml_result,
+    blup_result = blup_result,
+    solver_used = solver_used,
+    call        = call
+  )
+}
+
+# ============================================================
+# Internal helpers
+# ============================================================
+
+#' @noRd
+.validate_y <- function(y) {
+  if (!is.numeric(y)) stop("'y' must be a numeric vector.")
+  if (anyNA(y)) stop("'y' contains NA. Remove or impute missing phenotypes.")
+  if (length(y) < 2) stop("'y' must have at least 2 observations.")
+  y
+}
+
+#' @noRd
+.prepare_X <- function(X, n) {
+  if (is.null(X)) {
+    X <- matrix(1.0, nrow = n, ncol = 1)
+    colnames(X) <- "(Intercept)"
+    return(X)
+  }
+  if (is.data.frame(X)) X <- as.matrix(X)
+  if (!is.matrix(X) || !is.numeric(X)) {
+    stop("'X' must be a numeric matrix or data.frame.")
+  }
+  if (nrow(X) != n) {
+    stop(sprintf("'X' nrows (%d) != length(y) (%d).", nrow(X), n))
+  }
+  if (anyNA(X)) stop("'X' contains NA values.")
+  X
+}
+
+#' @noRd
+.resolve_threads <- function(n_threads) {
+  if (is.null(n_threads)) {
+    max(1L, parallel::detectCores(logical = FALSE))
+  } else {
+    as.integer(max(1L, n_threads))
+  }
+}
+
+#' @noRd
+.assemble_output <- function(
+    y, ids, g_names, reml_result, blup_result, solver_used, call
+) {
+  n <- length(y)
+
+  # Named variance components
+  sigma2_names <- c(g_names, "residual")
+  sigma2 <- setNames(reml_result$sigma2, sigma2_names)
+  h2     <- setNames(reml_result$h2, g_names)
+
+  # Named EBV per component
+  gebv_list <- setNames(blup_result$gebv_per_component, g_names)
+  if (!is.null(ids)) {
+    gebv_list <- lapply(gebv_list, function(v) {
+      names(v) <- ids; v
+    })
+  }
+
+  # Total GEBV
+  total_gebv <- blup_result$total_gebv
+  if (!is.null(ids)) names(total_gebv) <- ids
+
+  # Fixed effects
+  fixed_effects <- blup_result$fixed_effects
+
+  structure(
+    list(
+      gebv          = gebv_list,
+      total_gebv    = total_gebv,
+      fixed_effects = fixed_effects,
+      varcomp       = list(
+        sigma2 = sigma2,
+        h2     = h2
+      ),
+      loglik        = reml_result$loglik,
+      algorithm     = reml_result$algorithm,
+      solver        = solver_used,
+      converged     = reml_result$converged,
+      n_iter        = reml_result$n_iter,
+      n             = n,
+      call          = call
+    ),
+    class = "masreml"
+  )
+}

@@ -1,7 +1,8 @@
 // src/rust/src/solver/factorized.rs
 use ndarray::{Array1, Array2};
-use ndarray_linalg::{Solve, UPLO};
+use ndarray_linalg::{Solve, UPLO, Diag};
 use ndarray_linalg::Cholesky;
+use ndarray_linalg::SolveTriangular;
 
 use super::{BlupResult, SolverError, StdResult};
 
@@ -38,10 +39,14 @@ impl FactorizedV {
         Ok(Self { l, n, sigma2: sigma2.to_vec() })
     }
 
-    /// Solve V * x = b using stored L factor
-    /// V = L*L', so solve L*y=b then L'*x=y
     pub fn solve_vec(&self, b: &Array1<f64>) -> StdResult<Array1<f64>, SolverError> {
-        self.l.solve(b)
+    // V = L*L', solve V*x = b via:
+    // 1. solve L*y = b  (forward substitution)
+    // 2. solve L'*x = y (backward substitution)
+
+        let y = self.l.solve_triangular(UPLO::Lower, Diag::NonUnit, b)
+            .map_err(|_| SolverError::NotPositiveDefinite)?;
+        self.l.t().to_owned().solve_triangular(UPLO::Upper, Diag::NonUnit, &y)
             .map_err(|_| SolverError::NotPositiveDefinite)
     }
 

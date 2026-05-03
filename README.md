@@ -46,13 +46,13 @@ R package dependencies: `devtools`, `MASS` (for examples).
 
 ```r
 # Install from GitHub
-devtools::install_github("aguswibowo/masreml")
+devtools::install_github("bowo1698/masreml")
 ```
 
 Or from a local clone:
 
 ```bash
-git clone https://github.com/aguswibowo/masreml.git
+git clone https://github.com/bowo1698/masreml.git
 cd masreml
 ```
 

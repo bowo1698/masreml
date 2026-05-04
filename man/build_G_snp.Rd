@@ -2,16 +2,64 @@
 % Please edit documentation in R/utils.R
 \name{build_G_snp}
 \alias{build_G_snp}
-\title{Build SNP additive G matrix (VanRaden 2008)}
+\title{Build SNP Additive Genomic Relationship Matrix}
 \usage{
 build_G_snp(W)
 }
 \arguments{
-\item{W}{numeric matrix (n x m), raw genotype 0/1/2}
+\item{W}{numeric matrix (n x m) of raw genotype codes, where n is the
+number of individuals and m is the number of SNP markers. Values must
+be 0, 1, or 2 representing the number of copies of the reference
+allele. Row names are used as individual IDs. Example format:
+\preformatted{
+       SNP1 SNP2 SNP3
+  ind1    0    1    2
+  ind2    1    0    1
+  ind3    2    1    0
+  }}
 }
 \value{
-numeric matrix (n x n), SNP additive G
+numeric matrix (n x n) of genomic relationships. Diagonal
+elements approximate 1 + inbreeding coefficient. Off-diagonal
+elements represent genomic relationships between pairs of individuals.
 }
 \description{
-Build SNP additive G matrix (VanRaden 2008)
+Constructs the SNP additive genomic relationship matrix (G) following
+VanRaden (2008) Method 1. The resulting matrix captures additive genetic
+relationships among individuals based on SNP marker data, and can be
+used directly in \code{masreml()} or \code{gwablup()} via the \code{G}
+argument.
+}
+\examples{
+\dontrun{
+# Create example genotype matrix (5 individuals, 4 SNPs)
+W <- matrix(
+  c(0, 1, 2, 1,
+    1, 0, 1, 2,
+    2, 1, 0, 1,
+    0, 2, 1, 0,
+    1, 1, 2, 1),
+  nrow = 5, ncol = 4, byrow = TRUE
+)
+rownames(W) <- paste0("ind", 1:5)
+colnames(W) <- paste0("SNP", 1:4)
+
+# Build G matrix
+G <- build_G_snp(W)
+
+# Check diagonal — should be ~1
+round(diag(G), 3)
+
+# Use pre-built G in masreml
+fit <- masreml(y, G = list(snp_add = G))
+}
+
+}
+\references{
+VanRaden (2008) Efficient methods to compute genomic predictions.
+\emph{J. Dairy Sci.} 91:4414-4423.
+}
+\seealso{
+\code{\link{build_G_mh}}, \code{\link{build_D_snp}},
+\code{\link{masreml}}
 }

@@ -1,8 +1,11 @@
 #' Universal REML-BLUP for SNP and Microhaplotype Genomic Prediction
 #'
-#' Main interface for BLUP, GBLUP, and PBLUP using SNP additive,
-#' SNP dominance, and/or microhaplotype additive markers.
-#' Supports continuous and binary traits.
+#' BLUP-based model for genomic prediction using SNP or microhaplotype (MH)
+#' markers. Estimates variance components via REML and predicts genomic
+#' estimated breeding values (GEBV) via BLUP. Supports SNP additive,
+#' SNP dominance, and MH additive relationship matrices, for both
+#' continuous and binary traits. For GWAS-assisted prediction, see
+#' \code{\link{run_gwas}} and \code{\link{gwablup}}.
 #'
 #' @param y numeric vector of phenotypes (length n). Named vector
 #'   recommended for ID alignment. For binary trait, must contain
@@ -13,7 +16,9 @@
 #'   \itemize{
 #'     \item \code{snp_add}: matrix (n x m), raw genotype 0/1/2
 #'     \item \code{snp_dom}: matrix (n x m), raw genotype 0/1/2
-#'     \item \code{mh_add}: list of data.frames, one per chromosome
+#'     \item \code{mh_add}: list of data.frames, one per chromosome.
+#'       First column = individual ID, remaining columns = paired
+#'       haplotype allele codes per block (strand1, strand2, strand1, ...)
 #'   }
 #' @param G list of pre-built relationship matrices (optional):
 #'   \itemize{
@@ -81,6 +86,9 @@
 #'     \item \code{converged}: always TRUE for single-step
 #'   }
 #'
+#' @seealso \code{\link{run_gwas}}, \code{\link{gwablup}},
+#'   \code{\link{cv_masreml}}, \code{\link{compute_accuracy}}
+#' 
 #' @references
 #' VanRaden (2008) Efficient methods to compute genomic predictions.
 #' \emph{J. Dairy Sci.} 91:4414-4423.

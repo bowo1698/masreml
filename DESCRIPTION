@@ -1,6 +1,6 @@
 Package: masreml
 Title: Universal REML-BLUP for SNP and Microhaplotype Genomic Prediction
-Version: 0.1.0
+Version: 1.0.0
 Authors@R: person("Wibowo", "Agus", email = "aguswibowo1698@gmail.com", role = c("aut", "cre"))
 Description: Implements BLUP, GBLUP, and PBLUP for genomic prediction using
     SNP (additive, dominance) and microhaplotype (additive) markers via

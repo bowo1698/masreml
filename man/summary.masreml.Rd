@@ -2,15 +2,23 @@
 % Please edit documentation in R/summary.R
 \name{summary.masreml}
 \alias{summary.masreml}
-\title{Summary method for masreml objects}
+\title{Summarize Genomic Prediction Results}
 \usage{
 \method{summary}{masreml}(object, ...)
 }
 \arguments{
-\item{object}{object of class \code{"masreml"}}
+\item{object}{object of class \code{"masreml"} from \code{masreml()}
+or \code{gwablup()}.}
 
-\item{...}{ignored}
+\item{...}{ignored.}
 }
 \description{
-Summary method for masreml objects
+Detailed summary of a fitted \code{masreml} object including model
+information, variance components table, heritability, and GEBV
+distribution per component. For binary traits, also reports AUC
+and heritability on liability and observed scales.
+}
+\seealso{
+\code{\link{print.masreml}}, \code{\link{varcomp}},
+\code{\link{masreml}}
 }

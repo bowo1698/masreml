@@ -2,21 +2,35 @@
 % Please edit documentation in R/utils.R
 \name{build_A_ped}
 \alias{build_A_ped}
-\title{Utility functions for masreml}
+\title{Build Pedigree-Based Additive Relationship Matrix}
 \usage{
 build_A_ped(pedigree)
 }
 \arguments{
-\item{pedigree}{data.frame with columns:
-\code{id}, \code{sire}, \code{dam}
-IDs must be integers or convertible to integer (1-based).
-Use 0 for unknown parents.}
+\item{pedigree}{data.frame with columns \code{id}, \code{sire},
+and \code{dam}. Rows must be ordered such that parents appear
+before offspring. IDs must be integers or convertible to integer
+(1-based). Use 0 for unknown parents. Example format:
+\preformatted{
+  id sire dam
+   1    0   0
+   2    0   0
+   3    1   2
+   4    1   2
+   5    3   4
+  }}
 }
 \value{
-numeric matrix (n x n), additive relationship matrix A
+numeric matrix (n x n) of additive relationships. Diagonal
+elements equal 1 + inbreeding coefficient. Off-diagonal elements
+equal twice the coefficient of kinship between pairs.
 }
 \description{
-Utility functions for masreml
+Constructs the numerator relationship matrix (A) from pedigree data
+following Henderson (1976). The A matrix captures additive genetic
+relationships based on known ancestry, and can be used in
+\code{masreml()} for pedigree-based BLUP (PBLUP) or combined with
+genomic relationship matrices.
 }
 \examples{
 \dontrun{
@@ -26,13 +40,16 @@ ped <- data.frame(
   dam  = c(0, 0, 2, 2, 4)
 )
 A <- build_A_ped(ped)
+
+# Use in masreml (pedigree BLUP)
+fit <- masreml(y, G = list(pedigree = A))
 }
 
 }
-\keyword{(Henderson}
-\keyword{1976)}
-\keyword{A}
-\keyword{Build}
-\keyword{internal}
-\keyword{matrix}
-\keyword{pedigree}
+\references{
+Henderson (1976) A simple method for computing the inverse of a
+numerator relationship matrix. \emph{Biometrics} 32:69-83.
+}
+\seealso{
+\code{\link{build_G_snp}}, \code{\link{masreml}}
+}

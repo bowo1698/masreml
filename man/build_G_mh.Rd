@@ -2,18 +2,67 @@
 % Please edit documentation in R/utils.R
 \name{build_G_mh}
 \alias{build_G_mh}
-\title{Build MH additive Agh matrix (Da 2015)}
+\title{Build Multi-allelic Additive Genomic Relationship Matrix}
 \usage{
 build_G_mh(mh_list)
 }
 \arguments{
-\item{mh_list}{list of data.frames, one per chromosome.
-Each data.frame: first col = ID, then paired strand columns
-per haplotype block (strand1, strand2, strand1, strand2, ...)}
+\item{mh_list}{list of data.frames, one per chromosome. Each data.frame
+must have the following format:
+\itemize{
+\item First column: individual IDs (character)
+\item Remaining columns: paired haplotype allele codes per block,
+alternating strand1 and strand2
+(strand1_block1, strand2_block1, strand1_block2, strand2_block2, ...)
+\item Allele codes must be integers starting from 0
+}
+Example for one chromosome with 2 blocks:
+\preformatted{
+  ID    B1_s1 B1_s2 B2_s1 B2_s2
+  ind1      0     1     2     0
+  ind2      1     1     0     1
+  ind3      0     2     1     2
+  }}
 }
 \value{
-numeric matrix (n x n), MH additive Agh
+numeric matrix (n x n) of microhaplotype-based genomic
+relationships. Same interpretation as SNP additive G matrix but
+based on haplotype block diversity.
 }
 \description{
-Build MH additive Agh matrix (Da 2015)
+Constructs the multi-allelic (MH) additive genomic relationship matrix
+(Wgh) following Da (2015). Uses multi-allelic haplotype block coding
+(W_ah) that captures haplotype diversity beyond what bi-allelic SNPs
+can represent. The resulting matrix can be used in \code{masreml()} or
+\code{gwablup()} via the \code{G} argument.
+}
+\examples{
+\dontrun{
+# mh_list: one data.frame per chromosome
+# Each row = one individual
+# Columns: ID, then paired strand columns per haplotype block
+chr1 <- data.frame(
+  ID    = paste0("ind", 1:5),
+  B1_s1 = c(0, 1, 0, 2, 1),   # block 1 strand 1
+  B1_s2 = c(1, 1, 2, 0, 0),   # block 1 strand 2
+  B2_s1 = c(2, 0, 1, 1, 0),   # block 2 strand 1
+  B2_s2 = c(0, 1, 2, 0, 1)    # block 2 strand 2
+)
+mh_list <- list(chr1 = chr1)
+
+# Build Agh matrix
+G_mh <- build_G_mh(mh_list)
+
+# Use in masreml
+fit <- masreml(y, G = list(mh_add = G_mh))
+}
+
+}
+\references{
+Da et al. (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction
+and variance component estimation using SNP markers. \emph{BMC Genet.} 15:100.
+}
+\seealso{
+\code{\link{build_G_snp}}, \code{\link{masreml}},
+\code{\link{run_gwas}}
 }

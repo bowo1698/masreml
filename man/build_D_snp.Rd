@@ -2,16 +2,43 @@
 % Please edit documentation in R/utils.R
 \name{build_D_snp}
 \alias{build_D_snp}
-\title{Build SNP dominance D matrix (Da et al. 2014)}
+\title{Build SNP Dominance Relationship Matrix}
 \usage{
 build_D_snp(W)
 }
 \arguments{
-\item{W}{numeric matrix (n x m), raw genotype 0/1/2}
+\item{W}{numeric matrix (n x m) of raw genotype codes, where n is the
+number of individuals and m is the number of SNP markers. Values must
+be 0, 1, or 2. Same format as \code{\link{build_G_snp}}.}
 }
 \value{
-numeric matrix (n x n), SNP dominance D
+numeric matrix (n x n) of dominance relationships.
 }
 \description{
-Build SNP dominance D matrix (Da et al. 2014)
+Constructs the SNP dominance relationship matrix (D) following
+Da et al. (2015). Captures non-additive (dominance) genetic
+relationships among individuals. Can be used alongside the additive
+G matrix in \code{masreml()} to partition genetic variance into
+additive and dominance components.
+}
+\examples{
+\dontrun{
+W <- matrix(sample(0:2, 100*50, replace=TRUE), 100, 50)
+rownames(W) <- paste0("ind", 1:100)
+
+# Additive + dominance model
+fit <- masreml(
+  y       = y,
+  markers = list(snp_add = W, snp_dom = W)
+)
+summary(fit)
+}
+
+}
+\references{
+Da et al. (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction
+and variance component estimation using SNP markers. \emph{BMC Genet.} 15:100.
+}
+\seealso{
+\code{\link{build_G_snp}}, \code{\link{masreml}}
 }

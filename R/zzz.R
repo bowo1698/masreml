@@ -1,4 +1,5 @@
 #' @keywords internal
+#' @useDynLib masreml, .registration = TRUE
 "_PACKAGE"
 
 .onLoad <- function(libname, pkgname) {
@@ -21,10 +22,29 @@
 
 .onAttach <- function(libname, pkgname) {
   ver <- utils::packageVersion("masreml")
-  packageStartupMessage(sprintf(
-    "masreml %s — Universal REML-BLUP for SNP and Microhaplotype Genomic Prediction",
-    ver
-  ))
+  packageStartupMessage(
+    "\n===============================================================\n",
+    " masreml v", ver, "\n",
+    " Universal REML-BLUP Using Multiple Genetic Markers for Genomic\n",
+    " Prediction\n",
+    " Author: Agus Wibowo\n",
+    "---------------------------------------------------------------\n",
+    " Marker types: Biallelic and Multi-allelic (additive and dominance)\n",
+    " REML methods: HE | AI | EM | HI (auto)\n",
+    " Traits:       Continuous | Binary (logit/probit)\n",
+    "---------------------------------------------------------------\n",
+    " Core Functions:\n",
+    "   * masreml()           - REML-BLUP genomic prediction\n",
+    "   * run_gwas()          - EMMAX genome-wide association\n",
+    "   * gwablup()           - GWAS-assisted genomic prediction\n",
+    "   * build_G_snp()       - SNP additive G matrix\n",
+    "   * build_D_snp()       - SNP dominance D matrix\n",
+    "   * build_G_mh()        - Multi-allelic additive W matrix\n",
+    "---------------------------------------------------------------\n",
+    " Documentation:  ?masreml\n",
+    " Report bugs:    github.com/bowo1698/masreml/issues\n",
+    "===============================================================\n"
+  )
 }
 
 .onUnload <- function(libpath) {

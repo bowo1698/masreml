@@ -46,21 +46,46 @@ fn center_w_vanraden(w_raw: &Array2<f64>, p: &[f64]) -> Array2<f64> {
 /// Output: GMatrix { g: n×n, k, n, m }
 pub fn build_g_snp_add_internal(
     w_raw: &Array2<f64>,
+    weights: Option<&[f64]>,
 ) -> StdResult<GMatrix, MatrixError> {
     validate_w(w_raw, "SNP additive W")?;
 
     let p = compute_allele_freq(w_raw);
     let w_c = center_w_vanraden(w_raw, &p);
-    let k = compute_k(&w_c);
 
-    if k == 0.0 {
-        return Err(MatrixError::InvalidDimension(
-            "k = 0, all markers are monomorphic".to_string()
-        ));
+    // Validate weights length if provided
+    if let Some(d) = weights {
+        if d.len() != w_raw.ncols() {
+            return Err(MatrixError::InvalidDimension(
+                format!(
+                    "weights length {} != ncols {}",
+                    d.len(), w_raw.ncols()
+                )
+            ));
+        }
     }
 
-    // G = WW' / k, hitung block-wise paralel
-    let g = compute_gram_parallel(&w_c, k);
+    let g = match weights {
+        Some(d) => {
+            let w_scaled = scale_columns(&w_c, d);
+            let k = compute_k(&w_scaled);
+            if k == 0.0 {
+                return Err(MatrixError::InvalidDimension(
+                    "k = 0 after weighting".to_string()
+                ));
+            }
+            compute_gram_parallel(&w_scaled, k)
+        }
+        None => {
+            let k = compute_k(&w_c);
+            if k == 0.0 {
+                return Err(MatrixError::InvalidDimension(
+                    "k = 0, all markers are monomorphic".to_string()
+                ));
+            }
+            compute_gram_parallel(&w_c, k)
+        }
+    };
 
     Ok(GMatrix::new(g))
 }
@@ -97,19 +122,43 @@ pub fn compute_gram_parallel(w: &Array2<f64>, k: f64) -> Array2<f64> {
     g
 }
 
+/// Scale columns of W by sqrt(weights)
+/// W_scaled[:,j] = W[:,j] * sqrt(weights[j])
+fn scale_columns(w: &Array2<f64>, weights: &[f64]) -> Array2<f64> {
+    let mut ws = w.to_owned();
+    ws.axis_iter_mut(Axis(1))
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(j, mut col)| {
+            let scale = weights[j].sqrt();
+            col.iter_mut().for_each(|x| *x *= scale);
+        });
+    ws
+}
+
 /// Extendr entry point
 /// Input R matrix: raw genotype 0/1/2 (n × m)
 /// Output R matrix: G matrix (n × n)
 #[extendr]
-pub fn build_g_snp_add(w: RMatrix<f64>) -> Result<RMatrix<f64>> {
+pub fn build_g_snp_add(
+    w: RMatrix<f64>,
+    weights: Nullable<&[f64]>,
+) -> Result<RMatrix<f64>> {
     let nrow = w.nrows();
     let ncol = w.ncols();
     let data: Vec<f64> = w.data().to_vec();
     let w_arr = Array2::from_shape_vec((nrow, ncol), data)
         .map_err(|e| Error::from(e.to_string()))?;
 
-    let gmat = build_g_snp_add_internal(&w_arr)
-        .map_err(|e| Error::from(e.to_string()))?;
+    let w_opt: Option<Vec<f64>> = match weights {
+        Nullable::NotNull(d) => Some(d.to_vec()),
+        Nullable::Null       => None,
+    };
+
+    let gmat = build_g_snp_add_internal(
+        &w_arr,
+        w_opt.as_deref(),
+    ).map_err(|e| Error::from(e.to_string()))?;
 
     let g_vec: Vec<f64> = gmat.g.into_raw_vec();
     Ok(RMatrix::new_matrix(nrow, nrow, |r, c| g_vec[r * nrow + c]))

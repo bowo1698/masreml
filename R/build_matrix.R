@@ -67,11 +67,11 @@
 # ============================================================
 
 #' @noRd
-.build_g_snp <- function(w, type = "additive") {
+.build_g_snp <- function(w, type = "additive", weights = NULL) {
   if (type == "additive") {
-    G <- r_build_g_snp_add(w)
+    G <- r_build_g_snp_add(w, weights)
   } else {
-    G <- r_build_g_snp_dom(w)
+    G <- r_build_g_snp_dom(w) 
   }
   rownames(G) <- rownames(w)
   colnames(G) <- rownames(w)
@@ -134,7 +134,7 @@
 # ============================================================
 
 #' @noRd
-.build_g_mh <- function(mh_list, ids = NULL) {
+.build_g_mh <- function(mh_list, ids = NULL, weights = NULL) {
 
   # Validate: must be named list of data.frames
   if (!is.list(mh_list)) {
@@ -195,7 +195,8 @@
   G <- r_build_g_mh_add(
     hap1      = hap1_all,
     hap2      = hap2_all,
-    n_alleles = as.integer(n_alleles_all)
+    n_alleles = as.integer(n_alleles_all),
+    weights   = weights
   )
 
   rownames(G) <- chr_ids
@@ -264,6 +265,82 @@
 # ============================================================
 # Pre-built G matrix validator
 # ============================================================
+
+#' Validate weights vector for GWABLUP
+#' @param weights numeric vector of PP_j, length must match n_markers
+#' @param n_markers expected length
+#' @param label marker type label for error messages
+#' @noRd
+.validate_weights <- function(weights, n_markers, label) {
+  if (is.null(weights)) return(invisible(NULL))
+
+  if (!is.numeric(weights)) {
+    stop(sprintf("[%s] weights must be a numeric vector.", label))
+  }
+
+  if (length(weights) != n_markers) {
+    stop(sprintf(
+      "[%s] weights length %d != n_markers %d.",
+      label, length(weights), n_markers
+    ))
+  }
+
+  if (anyNA(weights)) {
+    stop(sprintf("[%s] weights contains NA values.", label))
+  }
+
+  if (any(weights < 0)) {
+    stop(sprintf("[%s] weights must be non-negative.", label))
+  }
+
+  invisible(weights)
+}
+
+#' Build weighted G matrix from gwas_result (for GWABLUP)
+#' @param markers list marker input (snp_add or mh_add)
+#' @param gwas_result output from run_gwas() — list with element $pp
+#' @param ids character vector individual IDs
+#' @return named list with one G_wa matrix
+#' @noRd
+.build_g_matrices_weighted <- function(markers, gwas_result, ids = NULL, min_weight = 1e-4) {
+
+  if (is.null(gwas_result$pp)) {
+    stop("gwas_result must contain $pp element. Run run_gwas() first.")
+  }
+
+  pp <- gwas_result$pp
+  pp <- pmax(pp, min_weight)
+  pp <- pp / mean(pp)
+  g_out <- list()
+
+  if (!is.null(markers$snp_add)) {
+    w <- .validate_snp_matrix(markers$snp_add, "snp_add", ids)
+    .validate_weights(pp, ncol(w), "snp_add")
+    g_out[["snp_add"]] <- .build_g_snp(w, type = "additive", weights = pp)
+  }
+
+  if (!is.null(markers$mh_add)) {
+    # Parse dulu untuk dapat n_loci
+    parsed <- lapply(seq_along(markers$mh_add), function(k) {
+      df <- markers$mh_add[[k]]
+      chr_label <- if (!is.null(names(markers$mh_add))) {
+        names(markers$mh_add)[k]
+      } else {
+        paste0("chr", k)
+      }
+      .parse_mh_chr(df, chr_label)
+    })
+    n_loci_total <- sum(sapply(parsed, function(p) ncol(p$hap1)))
+    .validate_weights(pp, n_loci_total, "mh_add")
+    g_out[["mh_add"]] <- .build_g_mh(markers$mh_add, ids, weights = pp)
+  }
+
+  if (length(g_out) == 0) {
+    stop("No marker data provided for weighted G matrix.")
+  }
+
+  g_out
+}
 
 #' @noRd
 .validate_g_matrix <- function(g, label, ids = NULL) {

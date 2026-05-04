@@ -2,16 +2,40 @@
 % Please edit documentation in R/utils.R
 \name{varcomp}
 \alias{varcomp}
-\title{Extract variance components as data.frame}
+\title{Extract Variance Components}
 \usage{
 varcomp(x)
 }
 \arguments{
-\item{x}{object of class \code{"masreml"}}
+\item{x}{object of class \code{"masreml"} from \code{masreml()} or
+\code{gwablup()}.}
 }
 \value{
-data.frame with Component, Sigma2, H2, Proportion
+data.frame with columns:
+\itemize{
+\item \code{Component}: name of variance component
+(e.g. \code{snp_add}, \code{mh_add}, \code{residual})
+\item \code{Sigma2}: estimated variance component
+\item \code{H2}: heritability (\code{sigma2 / sigma2_total});
+\code{NA} for residual component
+\item \code{Proportion}: proportion of total phenotypic variance
+}
 }
 \description{
-Extract variance components as data.frame
+Extracts variance component estimates from a fitted \code{masreml}
+object into a tidy data.frame, showing heritability and proportion
+of total variance explained by each component.
+}
+\examples{
+\dontrun{
+fit <- masreml(y, markers = list(snp_add = W))
+varcomp(fit)
+#   Component   Sigma2     H2 Proportion
+#     snp_add 0.412300 0.4123     0.4123
+#    residual 0.587700     NA     0.5877
+}
+
+}
+\seealso{
+\code{\link{masreml}}, \code{\link{summary.masreml}}
 }

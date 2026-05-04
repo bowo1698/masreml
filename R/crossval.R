@@ -1,17 +1,25 @@
-#' Cross-validation for masreml
+#' Cross-Validation for Genomic Prediction Models
 #'
-#' Performs k-fold or leave-one-out cross-validation
-#' to estimate prediction accuracy of genomic models.
+#' Performs k-fold or leave-one-out (LOO) cross-validation to estimate
+#' prediction accuracy of genomic models fitted with \code{masreml()}.
+#' Individuals are split into training and validation sets; the model
+#' is trained on each training set and used to predict the held-out
+#' validation individuals.
 #'
 #' @param y numeric vector of phenotypes (length n)
 #' @param X fixed effects matrix (n x c). NULL = intercept only
 #' @param markers list of raw marker inputs (see \code{\link{masreml}})
 #' @param G list of pre-built G matrices (see \code{\link{masreml}})
 #' @param folds integer, number of CV folds (default 5).
-#'   Use \code{folds = nrow} for leave-one-out (LOO).
+#'   Use \code{folds = length(y)} for leave-one-out (LOO).
+#'   Larger values give less biased but more variable estimates.
 #' @param scheme character, fold assignment scheme:
-#'   \code{"random"} (default): random assignment
-#'   \code{"systematic"}: systematic every k-th individual
+#'   \itemize{
+#'     \item \code{"random"} (default): individuals randomly assigned
+#'       to folds — recommended for most cases
+#'     \item \code{"systematic"}: every k-th individual assigned to
+#'       same fold — useful for structured populations
+#'   }
 #' @param method character, REML method (see \code{\link{masreml}})
 #' @param solver character, EBV solver (see \code{\link{masreml}})
 #' @param max_iter integer, max REML iterations
@@ -32,15 +40,26 @@
 #'     \item \code{call}: matched call
 #'   }
 #'
+#' @seealso \code{\link{masreml}}, \code{\link{compute_accuracy}}
+#' 
 #' @examples
 #' \dontrun{
+#' # 5-fold cross-validation
 #' cv <- cv_masreml(
 #'   y       = y,
-#'   markers = list(snp_add = W_snp),
+#'   markers = list(snp_add = W),
 #'   folds   = 5,
 #'   seed    = 42
 #' )
 #' summary(cv)
+#'
+#' # Leave-one-out cross-validation
+#' cv_loo <- cv_masreml(
+#'   y     = y,
+#'   markers = list(snp_add = W),
+#'   folds = length(y)
+#' )
+#' summary(cv_loo)
 #' }
 #'
 #' @export

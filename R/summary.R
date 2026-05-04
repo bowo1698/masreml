@@ -1,8 +1,13 @@
-#' Print method for masreml objects
+#' Print Genomic Prediction Results
 #'
-#' @param x object of class \code{"masreml"}
-#' @param ... ignored
-#' @export
+#' Compact display of a fitted \code{masreml} object showing variance
+#' components, heritability, and GEBV summary.
+#'
+#' @param x object of class \code{"masreml"} from \code{masreml()} or
+#'   \code{gwablup()}.
+#' @param ... ignored.
+#' @seealso \code{\link{summary.masreml}}, \code{\link{masreml}}
+#' @noRd
 print.masreml <- function(x, ...) {
   cat("\n── masreml: Genomic Prediction Results ───────────────\n")
   cat(sprintf("  Call      : %s\n", deparse(x$call)))
@@ -30,7 +35,7 @@ print.masreml <- function(x, ...) {
     min(g), mean(g), max(g), sd(g)
   ))
 
-  # Binary info (jika ada)
+  # Binary info
   if (!is.null(x$binary)) {
     cat(sprintf("\n  Trait     : binary (%s link)\n", x$binary$link))
     cat(sprintf("  AUC       : %.4f\n", x$binary$auc))
@@ -41,10 +46,18 @@ print.masreml <- function(x, ...) {
   invisible(x)
 }
 
-#' Summary method for masreml objects
+#' Summarize Genomic Prediction Results
 #'
-#' @param object object of class \code{"masreml"}
-#' @param ... ignored
+#' Detailed summary of a fitted \code{masreml} object including model
+#' information, variance components table, heritability, and GEBV
+#' distribution per component. For binary traits, also reports AUC
+#' and heritability on liability and observed scales.
+#'
+#' @param object object of class \code{"masreml"} from \code{masreml()}
+#'   or \code{gwablup()}.
+#' @param ... ignored.
+#' @seealso \code{\link{print.masreml}}, \code{\link{varcomp}},
+#'   \code{\link{masreml}}
 #' @export
 summary.masreml <- function(object, ...) {
   x <- object
@@ -93,7 +106,7 @@ summary.masreml <- function(object, ...) {
   }))
   print(gebv_summary, row.names = FALSE)
 
-  # Binary trait metrics (jika ada)
+  # Binary trait metrics
   if (!is.null(x$binary)) {
     cat("\nBinary Trait (GLMM Laplace):\n")
     cat(sprintf("  %-16s: %s\n",   "Link",           x$binary$link))
@@ -116,10 +129,14 @@ summary.masreml <- function(object, ...) {
   invisible(x)
 }
 
-#' Print method for masreml_cv objects
+#' Print Cross-Validation Results
 #'
-#' @param x object of class \code{"masreml_cv"}
-#' @param ... ignored
+#' Compact display of cross-validation results from \code{cv_masreml()},
+#' showing mean accuracy, bias, and per-fold breakdown.
+#'
+#' @param x object of class \code{"masreml_cv"} from \code{cv_masreml()}.
+#' @param ... ignored.
+#' @seealso \code{\link{summary.masreml_cv}}, \code{\link{cv_masreml}}
 #' @export
 print.masreml_cv <- function(x, ...) {
   cat("\n── masreml CV Results ────────────────────────────────\n")
@@ -136,10 +153,16 @@ print.masreml_cv <- function(x, ...) {
   invisible(x)
 }
 
-#' Summary method for masreml_cv objects
+#' Summarize Cross-Validation Results
 #'
-#' @param object object of class \code{"masreml_cv"}
-#' @param ... ignored
+#' Detailed summary of cross-validation results from \code{cv_masreml()},
+#' including accuracy statistics across folds, regression slope (bias),
+#' and GEBV distribution for all individuals.
+#'
+#' @param object object of class \code{"masreml_cv"} from
+#'   \code{cv_masreml()}.
+#' @param ... ignored.
+#' @seealso \code{\link{print.masreml_cv}}, \code{\link{cv_masreml}}
 #' @export
 summary.masreml_cv <- function(object, ...) {
   x <- object
@@ -195,86 +218,5 @@ summary.masreml_cv <- function(object, ...) {
   }
 
   cat("\n══════════════════════════════════════════════════════\n\n")
-  invisible(x)
-}
-
-#' Plot method for masreml objects
-#'
-#' @param x object of class \code{"masreml"}
-#' @param type character: "gebv" (default), "varcomp", "both"
-#' @param ... additional arguments passed to plot
-#' @export
-plot.masreml <- function(x, type = "gebv", ...) {
-  type <- match.arg(type, c("gebv", "varcomp", "both"))
-
-  if (type %in% c("gebv", "both")) {
-    # GEBV distribution plot
-    g <- x$total_gebv
-    hist(
-      g,
-      main  = "GEBV Distribution",
-      xlab  = "Total GEBV",
-      col   = "#56B4E9",
-      border = "white",
-      breaks = 30,
-      ...
-    )
-    abline(v = mean(g), col = "#E69F00", lwd = 2, lty = 2)
-  }
-
-  if (type %in% c("varcomp", "both")) {
-    # Variance components bar plot
-    sigma2 <- x$varcomp$sigma2
-    sigma2_p <- sum(sigma2)
-    prop <- sigma2 / sigma2_p
-
-    # Okabe-Ito palette
-    oi_colors <- c(
-      "#E69F00", "#56B4E9", "#009E73",
-      "#F0E442", "#0072B2", "#D55E00", "#CC79A7"
-    )
-
-    barplot(
-      prop,
-      names.arg = names(prop),
-      main      = "Variance Components (proportion)",
-      ylab      = "Proportion of total variance",
-      col       = oi_colors[seq_along(prop)],
-      border    = "white",
-      ylim      = c(0, 1),
-      ...
-    )
-    abline(h = 0, col = "grey50")
-  }
-
-  invisible(x)
-}
-
-#' Plot method for masreml_cv objects
-#'
-#' @param x object of class \code{"masreml_cv"}
-#' @param ... additional arguments passed to plot
-#' @export
-plot.masreml_cv <- function(x, ...) {
-  
-  # Per-fold accuracy barplot
-  acc <- x$accuracy_fold
-  oi_colors <- c(
-    "#56B4E9", "#E69F00", "#009E73",
-    "#F0E442", "#0072B2", "#D55E00", "#CC79A7"
-  )
-
-  barplot(
-    acc,
-    names.arg = paste0("F", seq_along(acc)),
-    main      = sprintf("CV Accuracy per Fold (mean = %.4f)", x$accuracy),
-    ylab      = "Prediction accuracy (r)",
-    col       = oi_colors[seq_along(acc) %% length(oi_colors) + 1],
-    border    = "white",
-    ylim      = c(0, 1),
-    ...
-  )
-  abline(h = x$accuracy, col = "#D55E00", lwd = 2, lty = 2)
-
   invisible(x)
 }

@@ -2,15 +2,21 @@
 % Please edit documentation in R/summary.R
 \name{summary.masreml_cv}
 \alias{summary.masreml_cv}
-\title{Summary method for masreml_cv objects}
+\title{Summarize Cross-Validation Results}
 \usage{
 \method{summary}{masreml_cv}(object, ...)
 }
 \arguments{
-\item{object}{object of class \code{"masreml_cv"}}
+\item{object}{object of class \code{"masreml_cv"} from
+\code{cv_masreml()}.}
 
-\item{...}{ignored}
+\item{...}{ignored.}
 }
 \description{
-Summary method for masreml_cv objects
+Detailed summary of cross-validation results from \code{cv_masreml()},
+including accuracy statistics across folds, regression slope (bias),
+and GEBV distribution for all individuals.
+}
+\seealso{
+\code{\link{print.masreml_cv}}, \code{\link{cv_masreml}}
 }

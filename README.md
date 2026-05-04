@@ -17,6 +17,8 @@ continuous and binary traits.
 - **Binary trait support**: single-step Laplace approximation on liability scale (logit or probit link)
 - **Flexible solvers**: Cholesky (small n) and PCG (large n) for EBV
 - **Multi-component models**: simultaneous fitting of additive + dominance, or SNP + MH
+- **GWAS**: EMMAX-based genome-wide association study via `run_gwas()`
+- **GWABLUP**: GWAS-assisted genomic prediction via `gwablup()` (Meuwissen et al. 2024)
 - **Cross-validation**: built-in k-fold CV via `cv_masreml()`
 - **Fast Rust backend**: core linear algebra implemented in Rust for performance
 
@@ -136,6 +138,25 @@ summary(fit_ad)
 varcomp(fit_ad)
 ```
 
+### GWAS and GWABLUP
+
+```r
+# Step 1: fit standard GBLUP
+fit <- masreml(y, markers = list(snp_add = W))
+
+# Step 2: run GWAS
+gwas <- run_gwas(
+  markers     = list(snp_add = W),
+  y           = y,
+  masreml_fit = fit
+)
+summary(gwas)
+
+# Step 3: GWAS-assisted prediction
+fit_wa <- gwablup(y, markers = list(snp_add = W), gwas_result = gwas)
+summary(fit_wa)
+```
+
 ### Microhaplotype (MH) GBLUP
 
 ```r
@@ -153,7 +174,7 @@ summary(fit_mh)
 cv <- cv_masreml(
   y       = y,
   markers = list(snp_add = W),
-  k       = 5,
+  folds   = 5,
   method  = "auto"
 )
 summary(cv)
@@ -173,6 +194,8 @@ fit <- masreml(y = y, G = list(snp_add = G))
 | Function | Description |
 |---|---|
 | `masreml()` | Main REML-BLUP interface |
+| `run_gwas()` | EMMAX GWAS for SNP or MH markers |
+| `gwablup()` | GWAS-assisted genomic prediction |
 | `build_G_snp()` | SNP additive G matrix (VanRaden 2008) |
 | `build_D_snp()` | SNP dominance D matrix |
 | `build_G_mh()` | MH additive G matrix (Da 2015) |
@@ -199,11 +222,14 @@ fit <- masreml(y = y, G = list(snp_add = G))
 ## References
 
 - VanRaden PM (2008) Efficient methods to compute genomic predictions. *J. Dairy Sci.* 91:4414–4423.
-- Da Y (2015) Multi-allelic haplotype model for genomic prediction. *BMC Genet.* 16:144.
+- Da Y (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction and
+  variance component estimation using SNP markers. *BMC Genet.* 16:144.
 - Johnson DL, Thompson R (1995) Restricted maximum likelihood estimation of variance components for
   univariate animal models. *J. Dairy Sci.* 78:449–456.
 - Dempster ER, Falconer DS (1950) Interpretation of high and low liability classes in respect of
   liability to disease. *Ann. Hum. Genet.* 31:195–203.
+- Meuwissen THE et al. (2024) GWABLUP: genome-wide association assisted BLUP. *Genet Sel Evol.* 56:17.
+- Kang HM et al. (2010) Variance component model to account for sample structure in GWAS. *Nat Genet.* 42:348–354.
 
 ---
 

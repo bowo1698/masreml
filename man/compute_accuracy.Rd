@@ -2,20 +2,56 @@
 % Please edit documentation in R/utils.R
 \name{compute_accuracy}
 \alias{compute_accuracy}
-\title{Compute prediction accuracy and bias}
+\title{Compute Genomic Prediction Accuracy and Bias}
 \usage{
 compute_accuracy(gebv, y, h2 = NULL)
 }
 \arguments{
-\item{gebv}{numeric vector, estimated breeding values}
+\item{gebv}{numeric vector of genomic estimated breeding values,
+typically \code{fit$total_gebv} from a \code{masreml()} or
+\code{gwablup()} object.}
 
-\item{y}{numeric vector, observed phenotypes}
+\item{y}{numeric vector of observed phenotypes (same length as
+\code{gebv}).}
 
-\item{h2}{numeric, heritability estimate (for r_MG calculation)}
+\item{h2}{numeric, heritability estimate for computing the
+marker-genetic correlation (r_MG). If NULL, r_MG is returned
+as NA. Typically \code{fit$varcomp$h2} from the fitted model.}
 }
 \value{
-data.frame with accuracy (r), bias (slope), r_MG
+data.frame with columns:
+\itemize{
+\item \code{r}: Pearson correlation between GEBV and phenotype.
+Ranges from -1 to 1; higher is better.
+\item \code{slope}: regression coefficient of phenotype on GEBV
+(\code{lm(y ~ gebv)}). Value of 1 indicates unbiased prediction;
+< 1 indicates inflation; > 1 indicates deflation.
+\item \code{r_MG}: marker-genetic correlation, computed as
+\code{r / sqrt(h2)}. Approximates correlation between GEBV
+and true breeding value.
+}
 }
 \description{
-Compute prediction accuracy and bias
+Evaluates prediction accuracy and bias of genomic estimated breeding
+values (GEBV) against observed phenotypes. Returns three metrics
+commonly used.
+}
+\examples{
+\dontrun{
+fit <- masreml(y, markers = list(snp_add = W))
+
+acc <- compute_accuracy(
+  gebv = fit$total_gebv,
+  y    = y,
+  h2   = fit$varcomp$h2["snp_add"]
+)
+print(acc)
+#      r  slope   r_MG
+# 0.823  0.991  0.914
+}
+
+}
+\seealso{
+\code{\link{masreml}}, \code{\link{gwablup}},
+\code{\link{cv_masreml}}
 }

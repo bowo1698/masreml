@@ -20,7 +20,8 @@ masreml(
 }
 \arguments{
 \item{y}{numeric vector of phenotypes (length n). Named vector
-recommended for ID alignment.}
+recommended for ID alignment. For binary trait, must contain
+only 0 and 1.}
 
 \item{X}{fixed effects design matrix (n x c). If NULL, intercept
 only is used.}
@@ -29,7 +30,9 @@ only is used.}
 \itemize{
 \item \code{snp_add}: matrix (n x m), raw genotype 0/1/2
 \item \code{snp_dom}: matrix (n x m), raw genotype 0/1/2
-\item \code{mh_add}: list of data.frames, one per chromosome
+\item \code{mh_add}: list of data.frames, one per chromosome.
+First column = individual ID, remaining columns = paired
+haplotype allele codes per block (strand1, strand2, strand1, ...)
 }}
 
 \item{G}{list of pre-built relationship matrices (optional):
@@ -40,73 +43,141 @@ only is used.}
 \item \code{pedigree}: numeric matrix (n x n), pedigree A
 }}
 
-\item{method}{character, REML algorithm:
-\code{"auto"} (default), \code{"HE"}, \code{"AI"},
-\code{"EM"}, \code{"HI"}}
+\item{method}{character, REML algorithm for variance component estimation:
+\itemize{
+\item \code{"auto"} (default): AI-REML for continuous,
+HE regression for binary
+\item \code{"HE"}: Haseman-Elston regression (fast, one-step)
+\item \code{"AI"}: Average Information REML (accurate, iterative)
+\item \code{"EM"}: Expectation-Maximization REML (stable, slower)
+\item \code{"HI"}: HE-initialized AI-REML
+}
+For binary trait, \code{"HE"} is recommended for speed.
+Any method can be used but \code{"AI"} may be slow on working response.}
 
 \item{solver}{character, EBV solver:
-\code{"auto"} (default), \code{"cholesky"}, \code{"pcg"}}
+\itemize{
+\item \code{"auto"} (default): Cholesky for n < 10,000, PCG otherwise
+\item \code{"cholesky"}: direct Cholesky factorization
+\item \code{"pcg"}: preconditioned conjugate gradient (large n)
+}}
 
 \item{max_iter}{integer, maximum REML iterations (default 100)}
 
-\item{tol}{numeric, convergence tolerance (default 1e-8)}
+\item{tol}{numeric, convergence tolerance (default 1e-6)}
 
-\item{n_threads}{integer, number of threads (default: all cores)}
+\item{n_threads}{integer, number of threads (default: all physical cores)}
 
-\item{trait}{character, trait type: \code{"continuous"} (default) or
-\code{"binary"} (0/1 phenotype, uses GLMM Laplace approximation)}
+\item{trait}{character, trait distribution:
+\itemize{
+\item \code{"continuous"} (default): Gaussian REML-BLUP
+\item \code{"binary"}: 0/1 phenotype, single-step Laplace
+approximation on liability scale
+}}
 
 \item{link}{character, link function for binary trait:
-\code{"logit"} (default) or \code{"probit"}}
+\itemize{
+\item \code{"logit"} (default): logistic link, sigma2_e = pi^2/3
+\item \code{"probit"}: probit link, sigma2_e = 1
+}}
 }
 \value{
 Object of class \code{"masreml"} with elements:
 \itemize{
-\item \code{gebv}: named list of EBV vectors per component
+\item \code{gebv}: named list of GEBV vectors per component
 \item \code{total_gebv}: total GEBV (sum across components)
 \item \code{fixed_effects}: fixed effect estimates
-\item \code{varcomp}: variance components (sigma2, h2)
+\item \code{varcomp}: list with \code{sigma2} and \code{h2}
 \item \code{loglik}: restricted log-likelihood
 \item \code{algorithm}: REML algorithm used
 \item \code{solver}: EBV solver used
 \item \code{converged}: logical, convergence status
 \item \code{n_iter}: number of REML iterations
+\item \code{n}: number of individuals
 \item \code{call}: matched call
 }
-For binary trait, additional \code{binary} slot contains:
+For binary trait (\code{trait = "binary"}), additional
+\code{binary} slot contains:
 \itemize{
 \item \code{link}: link function used
-\item \code{prevalence}: proportion of y=1
+\item \code{prevalence}: proportion of y = 1
 \item \code{h2_liability}: h2 on liability scale
-\item \code{h2_observed}: h2 on observed scale (Dempster transformation)
-\item \code{auc}: Area Under ROC Curve
-\item \code{fitted}: fitted probabilities P(y=1)
-\item \code{n_irls}: number of IRLS iterations
-\item \code{irls_converged}: logical convergence status
+\item \code{h2_observed}: h2 on observed (0/1) scale
+via Dempster-Falconer transformation
+\item \code{auc}: Area Under ROC Curve (Wilcoxon-MWW)
+\item \code{fitted}: fitted probabilities P(y = 1)
+\item \code{converged}: always TRUE for single-step
 }
 }
 \description{
-Main interface for BLUP, GBLUP, and PBLUP using SNP additive,
-SNP dominance, and/or microhaplotype additive markers.
+BLUP-based model for genomic prediction using SNP or microhaplotype (MH)
+markers. Estimates variance components via REML and predicts genomic
+estimated breeding values (GEBV) via BLUP. Supports SNP additive,
+SNP dominance, and MH additive relationship matrices, for both
+continuous and binary traits. For GWAS-assisted prediction, see
+\code{\link{run_gwas}} and \code{\link{gwablup}}.
 }
 \examples{
 \dontrun{
-# SNP additive only
-fit <- masreml(y = y, markers = list(snp_add = W_snp))
+# ── Continuous trait ─────────────────────────────────────
+# SNP additive GBLUP
+fit <- masreml(y = y, markers = list(snp_add = W))
+summary(fit)
 
 # MH additive only
 fit <- masreml(y = y, markers = list(mh_add = mh_list))
 
-# Combined SNP + MH
+# Combined SNP additive + dominance
 fit <- masreml(
   y       = y,
-  X       = X,
-  markers = list(snp_add = W_snp, mh_add = mh_list),
-  method  = "auto"
+  markers = list(snp_add = W, snp_dom = W),
+  method  = "AI"
 )
 
 # Pre-built G matrix
-fit <- masreml(y = y, G = list(snp_add = G_snp))
+fit <- masreml(y = y, G = list(snp_add = G))
+
+# ── Binary trait ─────────────────────────────────────────
+# Binary GBLUP (logit link, default HE)
+fit <- masreml(
+  y     = y_binary,
+  markers = list(snp_add = W),
+  trait = "binary"
+)
+summary(fit)
+
+# Binary with probit link
+fit <- masreml(
+  y     = y_binary,
+  markers = list(snp_add = W),
+  trait = "binary",
+  link  = "probit"
+)
+
+# Binary with EM-REML for variance components
+fit <- masreml(
+  y      = y_binary,
+  markers = list(snp_add = W),
+  trait  = "binary",
+  method = "EM"
+)
 }
 
+}
+\references{
+VanRaden (2008) Efficient methods to compute genomic predictions.
+\emph{J. Dairy Sci.} 91:4414-4423.
+
+Da (2015) Multi-allelic haplotype model for genomic prediction.
+\emph{BMC Genet.} 16:144.
+
+Dempster & Falconer (1950) Interpretation of high and low liability.
+\emph{Ann. Hum. Genet.} 31:195-203.
+
+Johnson & Thompson (1995) Restricted maximum likelihood estimation
+of variance components. \emph{J. Dairy Sci.} 78:449-456.
+}
+\seealso{
+\code{\link{run_gwas}}, \code{\link{gwablup}},
+\code{\link{cv_masreml}}, \code{\link{compute_accuracy}}
 }

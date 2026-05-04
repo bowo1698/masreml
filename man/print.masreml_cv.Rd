@@ -2,15 +2,19 @@
 % Please edit documentation in R/summary.R
 \name{print.masreml_cv}
 \alias{print.masreml_cv}
-\title{Print method for masreml_cv objects}
+\title{Print Cross-Validation Results}
 \usage{
 \method{print}{masreml_cv}(x, ...)
 }
 \arguments{
-\item{x}{object of class \code{"masreml_cv"}}
+\item{x}{object of class \code{"masreml_cv"} from \code{cv_masreml()}.}
 
-\item{...}{ignored}
+\item{...}{ignored.}
 }
 \description{
-Print method for masreml_cv objects
+Compact display of cross-validation results from \code{cv_masreml()},
+showing mean accuracy, bias, and per-fold breakdown.
+}
+\seealso{
+\code{\link{summary.masreml_cv}}, \code{\link{cv_masreml}}
 }

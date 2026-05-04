@@ -41,6 +41,9 @@ fn code_w_mh(
             let a1 = hap1[i] as usize;
             let a2 = hap2[i] as usize;
 
+            let a1 = if a1 < n_alleles { a1 } else { 0 };
+            let a2 = if a2 < n_alleles { a2 } else { 0 };
+
             allele_idx.iter()
                 .map(|&k| {
                     let pk = p[k];
@@ -130,8 +133,14 @@ pub fn build_g_mh_add_internal(
 
         // Compute allele frequencies for this locus
         let mut counts = vec![0usize; n_alleles];
-        h1_col.iter().for_each(|&a| counts[a as usize] += 1);
-        h2_col.iter().for_each(|&a| counts[a as usize] += 1);
+        h1_col.iter().for_each(|&a| {
+            let idx = a as usize;
+            if idx < counts.len() { counts[idx] += 1; }
+        });
+        h2_col.iter().for_each(|&a| {
+            let idx = a as usize;
+            if idx < counts.len() { counts[idx] += 1; }
+        });
         let total_alleles = (2 * n) as f64;
         let p: Vec<f64> = counts.iter()
             .map(|&c| c as f64 / total_alleles)
@@ -257,8 +266,14 @@ pub fn build_w_mh_internal(
 
         // Compute allele frequencies
         let mut counts = vec![0usize; n_alleles];
-        h1_col.iter().for_each(|&a| counts[a as usize] += 1);
-        h2_col.iter().for_each(|&a| counts[a as usize] += 1);
+        h1_col.iter().for_each(|&a| {
+            let idx = a as usize;
+            if idx < counts.len() { counts[idx] += 1; }
+        });
+        h2_col.iter().for_each(|&a| {
+            let idx = a as usize;
+            if idx < counts.len() { counts[idx] += 1; }
+        });
         let total_alleles = (2 * n) as f64;
         let p: Vec<f64> = counts.iter()
             .map(|&c| c as f64 / total_alleles)

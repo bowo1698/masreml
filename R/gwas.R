@@ -179,7 +179,8 @@ run_gwas <- function(
 
   } else {
     # MH: parse to get W_αh flat matrix + block_sizes
-    parsed_mh <- .prepare_mh_for_gwas(markers$mh_add, ids)
+    parsed_mh <- .prepare_mh_for_gwas(markers$mh_add, ids,
+                                   ref_mh = ref_markers$mh_add)
     raw_result <- r_run_emmax_mh(
         hap1      = parsed_mh$hap1,
         hap2      = parsed_mh$hap2,
@@ -245,9 +246,54 @@ run_gwas <- function(
 #' Prepare MH data untuk GWAS input
 #' Returns W_αh flat matrix + block_sizes
 #' @noRd
-.prepare_mh_for_gwas <- function(mh_list, ids = NULL) {
+.prepare_mh_for_gwas <- function(mh_list, ids = NULL, ref_mh = NULL) {
 
-  # Parse every chr
+  # ── Mode: hap_matrix (n x n_blocks*2) ────────────────────
+  if (is.matrix(mh_list)) {
+    n_cols <- ncol(mh_list)
+    if (n_cols %% 2 != 0) {
+      stop("[mh_add] hap_matrix must have even number of columns.")
+    }
+    n_blocks <- n_cols / 2
+
+    # Re-encode per block menggunakan ref jika tersedia
+    ref_mat <- if (!is.null(ref_mh) && is.matrix(ref_mh)) ref_mh else mh_list
+
+    hap1_enc      <- matrix(0L, nrow = nrow(mh_list), ncol = n_blocks)
+    hap2_enc      <- matrix(0L, nrow = nrow(mh_list), ncol = n_blocks)
+    n_alleles_vec <- integer(n_blocks)
+
+    for (b in seq_len(n_blocks)) {
+      s1 <- 2*b - 1; s2 <- 2*b
+      enc <- .reencode_hap_block(
+        mh_list[, s1], mh_list[, s2],
+        ref_mat[, s1], ref_mat[, s2]
+      )
+      hap1_enc[, b]    <- enc$h1
+      hap2_enc[, b]    <- enc$h2
+      n_alleles_vec[b] <- enc$n_alleles
+    }
+
+    # Align IDs jika tersedia
+    if (!is.null(ids)) {
+      rn <- rownames(mh_list)
+      if (!is.null(rn)) {
+        idx       <- match(ids, rn)
+        hap1_enc  <- hap1_enc[idx, , drop = FALSE]
+        hap2_enc  <- hap2_enc[idx, , drop = FALSE]
+      }
+    }
+
+    block_sizes <- pmax(n_alleles_vec - 1L, 0L)
+    return(list(
+      hap1        = hap1_enc,
+      hap2        = hap2_enc,
+      n_alleles   = as.integer(n_alleles_vec),
+      block_sizes = as.integer(block_sizes)
+    ))
+  }
+
+  # ── Mode: mh_list (list of data.frames) ──────────────────
   parsed <- lapply(seq_along(mh_list), function(k) {
     df <- mh_list[[k]]
     chr_label <- if (!is.null(names(mh_list))) {
@@ -272,15 +318,11 @@ run_gwas <- function(
     })
   }
 
-  # Stack hap1/hap2 column-wise
   hap1_all      <- do.call(cbind, lapply(parsed, `[[`, "hap1"))
   hap2_all      <- do.call(cbind, lapply(parsed, `[[`, "hap2"))
   n_alleles_all <- unlist(lapply(parsed, `[[`, "n_alleles"))
+  block_sizes   <- pmax(n_alleles_all - 1L, 0L)
 
-  # block_sizes = n_alleles - 1 per locus (kolom W_αh per blok)
-  block_sizes <- pmax(n_alleles_all - 1L, 0L)
-
-  # Build W_αh flat matrix via Rust
   list(
     hap1        = hap1_all,
     hap2        = hap2_all,

@@ -195,22 +195,30 @@ build_D_snp <- function(W) {
 #' can represent. The resulting matrix can be used in \code{masreml()} or
 #' \code{gwablup()} via the \code{G} argument.
 #'
-#' @param mh_list list of data.frames, one per chromosome. Each data.frame
-#'   must have the following format:
+#' @param mh_list list of data.frames (one per chromosome) or integer matrix
+#'   (n x n_blocks*2). Two input modes are supported:
 #'   \itemize{
-#'     \item First column: individual IDs (character)
-#'     \item Remaining columns: paired haplotype allele codes per block,
-#'       alternating strand1 and strand2
-#'       (strand1_block1, strand2_block1, strand1_block2, strand2_block2, ...)
-#'     \item Allele codes must be integers starting from 0
+#'     \item \strong{List of data.frames}: First column = individual IDs,
+#'       remaining columns = paired haplotype allele codes per block
+#'       (strand1_block1, strand2_block1, ...). Allele codes must be
+#'       0-based sequential integers.
+#'     \item \strong{Haplotype matrix}: integer matrix (n x n_blocks*2),
+#'       columns alternate strand1/strand2 per block. Allele codes can be
+#'       any integer (sparse, non-sequential) — re-encoded internally to
+#'       sequential 0-based using training reference (\code{ref_mh}).
 #'   }
-#'   Example for one chromosome with 2 blocks:
+#'   Example matrix format (50 blocks → 100 columns):
 #'   \preformatted{
-#'   ID    B1_s1 B1_s2 B2_s1 B2_s2
-#'   ind1      0     1     2     0
-#'   ind2      1     1     0     1
-#'   ind3      0     2     1     2
+#'   hap_block_all  # n x (n_blocks*2), cols: s1_b1, s2_b1, s1_b2, s2_b2, ...
 #'   }
+#'
+#' @param ref_mh reference haplotype data for training-based allele frequencies.
+#'   Same format as \code{mh_list}. If provided, allele frequencies and
+#'   dropped allele (most frequent) are estimated from \code{ref_mh} only,
+#'   avoiding data leakage from test individuals. If NULL, frequencies are
+#'   computed from all individuals in \code{mh_list}.
+#' @param ids character vector of individual IDs for alignment. Required
+#'   when \code{mh_list} is a haplotype matrix without rownames.
 #'
 #' @return numeric matrix (n x n) of microhaplotype-based genomic
 #'   relationships. Same interpretation as SNP additive G matrix but
@@ -237,16 +245,39 @@ build_D_snp <- function(W) {
 #' )
 #' mh_list <- list(chr1 = chr1)
 #'
-#' # Build Agh matrix
+#' # Build Agh matrix from mh_list
 #' G_mh <- build_G_mh(mh_list)
+#'
+#' # Build Agh matrix from haplotype matrix (train/test split)
+#' # hap_block_all: n x (n_blocks*2), any integer allele codes
+#' G_mh_full <- build_G_mh(
+#'   mh_list = hap_block_all,
+#'   ref_mh  = hap_block_all[idx_train, ],
+#'   ids     = as.character(1:n_total)
+#' )
 #'
 #' # Use in masreml
 #' fit <- masreml(y, G = list(mh_add = G_mh))
+#'
+#' # Use in run_gwas + gwablup (hap_matrix mode)
+#' fit_tr  <- masreml(y_train, markers = list(mh_add = hap_block_train))
+#' gwas_tr <- run_gwas(
+#'   markers     = list(mh_add = hap_block_train),
+#'   y           = y_train,
+#'   masreml_fit = fit_tr,
+#'   ref_markers = list(mh_add = hap_block_train)
+#' )
+#' fit_wa <- gwablup(
+#'   y           = y_train,
+#'   markers     = list(mh_add = hap_block_train),
+#'   gwas_result = gwas_tr,
+#'   ref_markers = list(mh_add = hap_block_train)
+#' )
 #' }
 #'
 #' @export
-build_G_mh <- function(mh_list, ref_mh = NULL) {
-  .build_g_mh(mh_list, ref_mh = ref_mh)
+build_G_mh <- function(mh_list, ref_mh = NULL, ids = NULL) {
+  .build_g_mh(mh_list, ids = ids, ref_mh = ref_mh)
 }
 
 # ============================================================

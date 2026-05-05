@@ -136,9 +136,20 @@
 #' @noRd
 .build_g_mh <- function(mh_list, ids = NULL, weights = NULL, ref_mh = NULL) {
 
-  # Validate: must be named list of data.frames
+  #── Detection mode: hap_matrix or mh_list ─────────────────
+  # If the input is a matrix (n x n_blocks*2), convert to parsed directly
+  if (is.matrix(mh_list) || is.data.frame(mh_list)) {
+    return(.build_g_mh_from_hapmatrix(
+      hap_matrix = mh_list,
+      ref_hap    = ref_mh,
+      ids        = ids,
+      weights    = weights
+    ))
+  }
+
+  # Validate: must be list of data.frames
   if (!is.list(mh_list)) {
-    stop("[mh_add] Must be a list of data.frames (one per chromosome).")
+    stop("[mh_add] Must be a list of data.frames (one per chromosome), or a haplotype matrix (n x n_blocks*2).")
   }
 
   # Parse each chromosome
@@ -277,6 +288,112 @@
   )
 }
 
+#' Build G_mh directly from raw haplotype matrix (n x n_blocks*2)
+#' Columns alternate strand1/strand2 per block: s1_b1, s2_b1, s1_b2, s2_b2, ...
+#' Allele codes can be any integer (sparse, non-sequential) — re-encoded internally
+#' @param hap_matrix integer matrix (n x n_blocks*2)
+#' @param ref_hap integer matrix (n_ref x n_blocks*2), training rows for allele freq
+#' @param ids character vector of individual IDs
+#' @param weights numeric vector of PP weights per block (for GWABLUP)
+#' @noRd
+.build_g_mh_from_hapmatrix <- function(hap_matrix, ref_hap = NULL,
+                                        ids = NULL, weights = NULL) {
+  if (!is.matrix(hap_matrix)) hap_matrix <- as.matrix(hap_matrix)
+  storage.mode(hap_matrix) <- "integer"
+
+  n        <- nrow(hap_matrix)
+  n_cols   <- ncol(hap_matrix)
+
+  if (n_cols %% 2 != 0) {
+    stop("[mh_add] hap_matrix must have even number of columns (paired strands).")
+  }
+  n_blocks <- n_cols / 2
+
+  if (!is.null(ref_hap)) {
+    if (!is.matrix(ref_hap)) ref_hap <- as.matrix(ref_hap)
+    storage.mode(ref_hap) <- "integer"
+    if (ncol(ref_hap) != n_cols) {
+      stop(sprintf(
+        "[mh_add] ref_hap ncol (%d) != hap_matrix ncol (%d).",
+        ncol(ref_hap), n_cols
+      ))
+    }
+  }
+
+  # IDs
+  chr_ids <- if (!is.null(ids)) {
+    ids
+  } else if (!is.null(rownames(hap_matrix))) {
+    rownames(hap_matrix)
+  } else {
+    as.character(seq_len(n))
+  }
+
+  # Re-encode per block dan build hap1/hap2 matrices
+  hap1_enc      <- matrix(0L, nrow = n, ncol = n_blocks)
+  hap2_enc      <- matrix(0L, nrow = n, ncol = n_blocks)
+  ref_h1_enc    <- if (!is.null(ref_hap)) matrix(0L, nrow=nrow(ref_hap), ncol=n_blocks) else NULL
+  ref_h2_enc    <- if (!is.null(ref_hap)) matrix(0L, nrow=nrow(ref_hap), ncol=n_blocks) else NULL
+  n_alleles_vec <- integer(n_blocks)
+
+  for (b in seq_len(n_blocks)) {
+    s1_col <- 2*b - 1
+    s2_col <- 2*b
+
+    h1 <- hap_matrix[, s1_col]
+    h2 <- hap_matrix[, s2_col]
+    r1 <- if (!is.null(ref_hap)) ref_hap[, s1_col] else h1
+    r2 <- if (!is.null(ref_hap)) ref_hap[, s2_col] else h2
+
+    enc <- .reencode_hap_block(h1, h2, r1, r2)
+
+    hap1_enc[, b]    <- enc$h1
+    hap2_enc[, b]    <- enc$h2
+    n_alleles_vec[b] <- enc$n_alleles
+
+    if (!is.null(ref_hap)) {
+      ref_enc          <- .reencode_hap_block(r1, r2, r1, r2)
+      ref_h1_enc[, b]  <- ref_enc$h1
+      ref_h2_enc[, b]  <- ref_enc$h2
+    }
+  }
+
+  # Call Rust builder
+  G <- r_build_g_mh_add(
+    hap1      = hap1_enc,
+    hap2      = hap2_enc,
+    n_alleles = as.integer(n_alleles_vec),
+    weights   = weights,
+    ref_hap1  = ref_h1_enc,
+    ref_hap2  = ref_h2_enc
+  )
+
+  rownames(G) <- chr_ids
+  colnames(G) <- chr_ids
+  G
+}
+
+#' Re-encode allele codes to sequential 0-based using training reference
+#' Unknown alleles in target (not seen in ref) are mapped to 0
+#' @noRd
+.reencode_hap_block <- function(h1, h2, ref_h1, ref_h2) {
+  unique_alleles <- sort(unique(c(ref_h1, ref_h2)))
+  allele_map     <- setNames(seq_along(unique_alleles) - 1L,
+                              as.character(unique_alleles))
+
+  recode <- function(x) {
+    r <- allele_map[as.character(x)]
+    r[is.na(r)] <- 0L
+    as.integer(r)
+  }
+
+  list(
+    h1        = recode(h1),
+    h2        = recode(h2),
+    n_alleles = length(unique_alleles)
+  )
+}
+
 # ============================================================
 # Pre-built G matrix validator
 # ============================================================
@@ -341,18 +458,21 @@
   }
 
   if (!is.null(markers$mh_add)) {
-    # Parse to get n_loci
-    parsed <- lapply(seq_along(markers$mh_add), function(k) {
-      df <- markers$mh_add[[k]]
-      chr_label <- if (!is.null(names(markers$mh_add))) {
-        names(markers$mh_add)[k]
-      } else {
-        paste0("chr", k)
-      }
-      .parse_mh_chr(df, chr_label)
-    })
-    n_loci_total <- sum(sapply(parsed, function(p) ncol(p$hap1)))
-    .validate_weights(pp, n_loci_total, "mh_add")
+    # Support both mh_list and hap_matrix input
+    if (is.matrix(markers$mh_add)) {
+      n_blocks <- ncol(markers$mh_add) / 2
+      .validate_weights(pp, n_blocks, "mh_add")
+    } else {
+      parsed <- lapply(seq_along(markers$mh_add), function(k) {
+        df <- markers$mh_add[[k]]
+        chr_label <- if (!is.null(names(markers$mh_add))) {
+          names(markers$mh_add)[k]
+        } else paste0("chr", k)
+        .parse_mh_chr(df, chr_label)
+      })
+      n_loci_total <- sum(sapply(parsed, function(p) ncol(p$hap1)))
+      .validate_weights(pp, n_loci_total, "mh_add")
+    }
     g_out[["mh_add"]] <- .build_g_mh(markers$mh_add, ids, weights = pp, ref_mh = ref_mh)
   }
 

@@ -137,9 +137,9 @@ build_G_snp <- function(W, ref_W = NULL) {
     ref_W <- .validate_snp_matrix(ref_W, "snp_add_ref")
     colMeans(ref_W) / 2
   } else {
-    numeric(0)
+    NULL
   }
-  G <- r_build_g_snp_add(W, allele_freq = allele_freq)
+  G <- r_build_g_snp_add(W, weights = NULL, allele_freq = allele_freq)
   rownames(G) <- rownames(W)
   colnames(G) <- rownames(W)
   G

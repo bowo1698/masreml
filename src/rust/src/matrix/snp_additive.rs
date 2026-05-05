@@ -100,10 +100,10 @@ pub fn build_g_snp_add_internal(
                     "k = 0 after weighting".to_string()
                 ));
             }
-            w_scaled.dot(&w_scaled.t()).mapv(|v| v / k_weighted)
+            compute_gram_parallel(&w_scaled, k_weighted)
         }
         None => {
-            w_c.dot(&w_c.t()).mapv(|v| v / k)
+            compute_gram_parallel(&w_c, k)
         }
     };
 
@@ -168,8 +168,10 @@ pub fn build_g_snp_add(
     let nrow = w.nrows();
     let ncol = w.ncols();
     let data: Vec<f64> = w.data().to_vec();
-    let w_arr = Array2::from_shape_vec((nrow, ncol), data)
-        .map_err(|e| Error::from(e.to_string()))?;
+    let w_arr = Array2::from_shape_vec((ncol, nrow), data)
+        .map_err(|e| Error::from(e.to_string()))?
+        .reversed_axes();
+        .to_owned();
 
     let w_opt: Option<Vec<f64>> = match weights {
         Nullable::NotNull(d) => Some(d.to_vec()),

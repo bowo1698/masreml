@@ -34,6 +34,10 @@
 #'   building G_wa are computed from \code{ref_markers} instead of
 #'   \code{markers}. Use in train/test context to avoid data leakage.
 #'   If NULL (default), allele frequencies computed from \code{markers}.
+#' @param trait character, trait distribution: \code{"continuous"} (default)
+#'   or \code{"binary"}. Passed to \code{masreml()}.
+#' @param link character, link function for binary trait: \code{"logit"}
+#'   (default) or \code{"probit"}. Passed to \code{masreml()}.
 #'
 #' @return Object of class \code{c("gwablup", "masreml")} —
 #'   identical structure to \code{masreml()} output, with
@@ -81,6 +85,14 @@
 #'   gwas_result = gwas_tr,
 #'   ref_markers = list(snp_add = W_train)
 #' )
+#'
+#' # ── Binary trait GWABLUP ──────────────────────────────────
+#' fit_tr_bin <- masreml(y_bin_train, markers = list(snp_add = W_train),
+#'                       trait = "binary")
+#' gwas_bin   <- run_gwas(list(snp_add = W_train), y_bin_train, fit_tr_bin,
+#'                        ref_markers = list(snp_add = W_train))
+#' fit_wa_bin <- gwablup(y_bin_train, list(snp_add = W_train), gwas_bin,
+#'                       trait = "binary", ref_markers = list(snp_add = W_train))
 #' G_full <- build_G_snp(W_all, ref_W = W_train)
 #' pred   <- predict(fit_wa_tr,
 #'                   G_full    = list(snp_add = G_full),
@@ -100,7 +112,9 @@ gwablup <- function(
     tol          = 1e-6,
     n_threads    = NULL,
     min_weight   = 1e-4,
-    ref_markers  = NULL
+    ref_markers  = NULL,
+    trait        = "continuous",
+    link         = "logit"
 ) {
   # ── Input validation ──────────────────────────────────────
   if (!is.numeric(y)) {
@@ -153,6 +167,8 @@ gwablup <- function(
     solver    = solver,
     max_iter  = max_iter,
     tol       = tol,
+    trait     = trait,
+    link      = link,
     n_threads = n_threads
   )
 

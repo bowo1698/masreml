@@ -1,13 +1,13 @@
 # Rust entry points — internal use only
 
 #' @noRd
-r_build_g_snp_add <- function(w, weights = NULL) .Call(wrap__r_build_g_snp_add, w, weights)
+r_build_g_snp_add <- function(w, weights = NULL, allele_freq = NULL) .Call(wrap__r_build_g_snp_add, w, weights, allele_freq)
 
 #' @noRd
 r_build_g_snp_dom <- function(w) .Call(wrap__r_build_g_snp_dom, w)
 
 #' @noRd
-r_build_g_mh_add <- function(hap1, hap2, n_alleles, weights = NULL) .Call(wrap__r_build_g_mh_add, hap1, hap2, n_alleles, weights)
+r_build_g_mh_add <- function(hap1, hap2, n_alleles, weights = NULL, ref_hap1 = NULL, ref_hap2 = NULL) .Call(wrap__r_build_g_mh_add, hap1, hap2, n_alleles, weights, ref_hap1, ref_hap2)
 
 #' @noRd
 r_build_a_ped <- function(sire, dam, n) .Call(wrap__r_build_a_ped, sire, dam, n)

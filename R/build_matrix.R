@@ -67,11 +67,11 @@
 # ============================================================
 
 #' @noRd
-.build_g_snp <- function(w, type = "additive", weights = NULL) {
+.build_g_snp <- function(w, type = "additive", weights = NULL, allele_freq = NULL) {
   if (type == "additive") {
-    G <- r_build_g_snp_add(w, weights)
+    G <- r_build_g_snp_add(w, weights, allele_freq)
   } else {
-    G <- r_build_g_snp_dom(w) 
+    G <- r_build_g_snp_dom(w)
   }
   rownames(G) <- rownames(w)
   colnames(G) <- rownames(w)
@@ -134,7 +134,7 @@
 # ============================================================
 
 #' @noRd
-.build_g_mh <- function(mh_list, ids = NULL, weights = NULL) {
+.build_g_mh <- function(mh_list, ids = NULL, weights = NULL, ref_mh = NULL) {
 
   # Validate: must be named list of data.frames
   if (!is.list(mh_list)) {
@@ -191,12 +191,27 @@
   hap2_all <- do.call(cbind, lapply(parsed, `[[`, "hap2"))
   n_alleles_all <- unlist(lapply(parsed, `[[`, "n_alleles"))
 
+  # Parse ref_mh if available for training-based allele frequencies
+  ref_h1_all <- NULL
+  ref_h2_all <- NULL
+  if (!is.null(ref_mh)) {
+    parsed_ref <- lapply(seq_along(ref_mh), function(k) {
+      df  <- ref_mh[[k]]
+      chr <- if (!is.null(names(ref_mh))) names(ref_mh)[k] else paste0("chr", k)
+      .parse_mh_chr(df, chr)
+    })
+    ref_h1_all <- do.call(cbind, lapply(parsed_ref, `[[`, "hap1"))
+    ref_h2_all <- do.call(cbind, lapply(parsed_ref, `[[`, "hap2"))
+  }
+
   # Call Rust builder
   G <- r_build_g_mh_add(
     hap1      = hap1_all,
     hap2      = hap2_all,
     n_alleles = as.integer(n_alleles_all),
-    weights   = weights
+    weights   = weights,
+    ref_hap1  = ref_h1_all,
+    ref_hap2  = ref_h2_all
   )
 
   rownames(G) <- chr_ids
@@ -302,7 +317,8 @@
 #' @param ids character vector individual IDs
 #' @return named list with one G_wa matrix
 #' @noRd
-.build_g_matrices_weighted <- function(markers, gwas_result, ids = NULL, min_weight = 1e-4) {
+.build_g_matrices_weighted <- function(markers, gwas_result, ids = NULL, min_weight = 1e-4,
+                                        ref_W = NULL, ref_mh = NULL) {
 
   if (is.null(gwas_result$pp)) {
     stop("gwas_result must contain $pp element. Run run_gwas() first.")
@@ -316,11 +332,16 @@
   if (!is.null(markers$snp_add)) {
     w <- .validate_snp_matrix(markers$snp_add, "snp_add", ids)
     .validate_weights(pp, ncol(w), "snp_add")
-    g_out[["snp_add"]] <- .build_g_snp(w, type = "additive", weights = pp)
+    allele_freq <- if (!is.null(ref_W)) {
+      ref_W <- .validate_snp_matrix(ref_W, "snp_add_ref")
+      colMeans(ref_W) / 2
+    } else NULL
+    g_out[["snp_add"]] <- .build_g_snp(w, type = "additive", weights = pp,
+                                         allele_freq = allele_freq)
   }
 
   if (!is.null(markers$mh_add)) {
-    # Parse dulu untuk dapat n_loci
+    # Parse to get n_loci
     parsed <- lapply(seq_along(markers$mh_add), function(k) {
       df <- markers$mh_add[[k]]
       chr_label <- if (!is.null(names(markers$mh_add))) {
@@ -332,7 +353,7 @@
     })
     n_loci_total <- sum(sapply(parsed, function(p) ncol(p$hap1)))
     .validate_weights(pp, n_loci_total, "mh_add")
-    g_out[["mh_add"]] <- .build_g_mh(markers$mh_add, ids, weights = pp)
+    g_out[["mh_add"]] <- .build_g_mh(markers$mh_add, ids, weights = pp, ref_mh = ref_mh)
   }
 
   if (length(g_out) == 0) {

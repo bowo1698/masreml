@@ -20,8 +20,9 @@ use reml::adaptive::run_reml;
 fn r_build_g_snp_add(
     w: RMatrix<f64>,
     weights: Nullable<&[f64]>,
+    allele_freq: Nullable<&[f64]>,
 ) -> Result<RMatrix<f64>> {
-    build_g_snp_add(w, weights)
+    build_g_snp_add(w, weights, allele_freq)
 }
 
 /// Build SNP dominance D matrix (Da et al. 2014)
@@ -38,8 +39,10 @@ fn r_build_g_mh_add(
     hap2: RMatrix<i32>,
     n_alleles: &[i32],
     weights: Nullable<&[f64]>,
+    ref_hap1: Nullable<RMatrix<i32>>,
+    ref_hap2: Nullable<RMatrix<i32>>,
 ) -> Result<RMatrix<f64>> {
-    build_g_mh_add(hap1, hap2, n_alleles, weights)
+    build_g_mh_add(hap1, hap2, n_alleles, weights, ref_hap1, ref_hap2)
 }
 
 /// Build pedigree A matrix (Henderson)
@@ -227,7 +230,7 @@ fn r_run_emmax_mh(
         .collect();
 
     // Build W_αh flat matrix + block_sizes dari hap1/hap2
-    let (w_mh, block_sizes) = build_w_mh_internal(&h1, &h2, &n_alleles_usize)
+    let (w_mh, block_sizes) = build_w_mh_internal(&h1, &h2, &n_alleles_usize, None, None)
         .map_err(|e| Error::from(e.to_string()))?;
 
     let x_arr = ndarray::Array2::from_shape_vec(

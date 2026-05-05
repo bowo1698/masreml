@@ -131,9 +131,15 @@ build_A_ped <- function(pedigree) {
 #' }
 #'
 #' @export
-build_G_snp <- function(W) {
+build_G_snp <- function(W, ref_W = NULL) {
   W <- .validate_snp_matrix(W, "snp_add")
-  G <- r_build_g_snp_add(W)
+  allele_freq <- if (!is.null(ref_W)) {
+    ref_W <- .validate_snp_matrix(ref_W, "snp_add_ref")
+    colMeans(ref_W) / 2
+  } else {
+    numeric(0)
+  }
+  G <- r_build_g_snp_add(W, allele_freq = allele_freq)
   rownames(G) <- rownames(W)
   colnames(G) <- rownames(W)
   G
@@ -239,8 +245,8 @@ build_D_snp <- function(W) {
 #' }
 #'
 #' @export
-build_G_mh <- function(mh_list) {
-  .build_g_mh(mh_list)
+build_G_mh <- function(mh_list, ref_mh = NULL) {
+  .build_g_mh(mh_list, ref_mh = ref_mh)
 }
 
 # ============================================================

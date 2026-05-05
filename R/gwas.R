@@ -24,6 +24,14 @@
 #' @param window integer, number of adjacent markers used in moving
 #'   average smoothing of likelihood ratios (default 5). Larger values
 #'   produce smoother posterior probabilities.
+#' @param ref_markers list of raw marker data for training individuals only,
+#'   in the same format as \code{markers}. If provided, allele frequencies
+#'   for building G_u (used in EMMAX) are computed from \code{ref_markers}
+#'   instead of \code{markers}. Use this when running GWAS in a train/test
+#'   context to avoid data leakage from test individuals into the
+#'   population structure correction matrix.
+#'   Supported elements: \code{snp_add} (matrix) or \code{mh_add} (list).
+#'   If NULL (default), allele frequencies are computed from \code{markers}.
 #'
 #' @return Object of class \code{"gwas_result"} with elements:
 #'   \itemize{
@@ -51,6 +59,7 @@
 #'
 #' @examples
 #' \dontrun{
+#' # ── Standard workflow (all individuals) ───────────────────
 #' # Step 1: fit standard GBLUP
 #' fit <- masreml(y, markers = list(snp_add = W))
 #'
@@ -65,6 +74,33 @@
 #' # Step 3: run GWABLUP using GWAS weights
 #' fit_wa <- gwablup(y, markers = list(snp_add = W), gwas_result = gwas)
 #' summary(fit_wa)
+#'
+#' # ── Train/test workflow (no data leakage) ─────────────────
+#' # Step 1: fit GBLUP on training only
+#' fit_tr <- masreml(y_train, markers = list(snp_add = W_train))
+#'
+#' # Step 2: run GWAS on training — ref_markers = training markers
+#' gwas_tr <- run_gwas(
+#'   markers     = list(snp_add = W_train),
+#'   y           = y_train,
+#'   masreml_fit = fit_tr,
+#'   ref_markers = list(snp_add = W_train)
+#' )
+#'
+#' # Step 3: GWABLUP on training with training-based freq
+#' fit_wa_tr <- gwablup(
+#'   y           = y_train,
+#'   markers     = list(snp_add = W_train),
+#'   gwas_result = gwas_tr,
+#'   ref_markers = list(snp_add = W_train)
+#' )
+#'
+#' # Step 4: predict test set
+#' G_full <- build_G_snp(W_all, ref_W = W_train)
+#' pred   <- predict(fit_wa_tr,
+#'                   G_full    = list(snp_add = G_full),
+#'                   train_ids = rownames(W_train),
+#'                   test_ids  = rownames(W_test))
 #' }
 #'
 #' @export
@@ -72,9 +108,10 @@ run_gwas <- function(
     markers,
     y,
     masreml_fit,
-    X      = NULL,
-    pi     = 0.001,
-    window = 5L
+    X            = NULL,
+    pi           = 0.001,
+    window       = 5L,
+    ref_markers  = NULL
 ) {
   # ── Input validation ──────────────────────────────────────
   if (!inherits(masreml_fit, "masreml")) {
@@ -94,7 +131,7 @@ run_gwas <- function(
     stop("window must be >= 1.")
   }
 
-  # ── Extract variance components dari masreml_fit ──────────
+  # ── Extract variance components from masreml_fit ──────────
   sigma2   <- masreml_fit$varcomp$sigma2
   n_random <- length(sigma2) - 1L
   sigma2_g <- sigma2[1]           # first random component
@@ -119,8 +156,8 @@ run_gwas <- function(
 
   marker_type <- if (has_snp) "snp" else "mh"
 
-  # ── Build G_u unweighted — reuse dari masreml_fit ─────────
-  g_u <- .extract_g_u(masreml_fit, markers, ids)
+  # ── Build G_u unweighted — reuse from masreml_fit ─────────
+  g_u <- .extract_g_u(masreml_fit, markers, ids, ref_markers = ref_markers)
 
   # ── Run EMMAX di Rust ──────────────────────────────────────
   message(sprintf(
@@ -156,7 +193,7 @@ run_gwas <- function(
     n_markers <- length(parsed_mh$block_sizes)
   }
 
-  # ── Smooth LR + compute PP di Rust ────────────────────────
+  # ── Smooth LR + compute PP in Rust ────────────────────────
   smooth_result <- r_smooth_and_pp(
     lr     = raw_result$lr,
     window = window,
@@ -188,15 +225,19 @@ run_gwas <- function(
 #' Extract G_u matrix from masreml_fit
 #' If not available, rebuild from markers
 #' @noRd
-.extract_g_u <- function(masreml_fit, markers, ids) {
-  # masreml_fit tidak menyimpan G_u secara eksplisit
-  # Build ulang G_u unweighted dari markers
+.extract_g_u <- function(masreml_fit, markers, ids, ref_markers = NULL) {
   if (!is.null(markers$snp_add)) {
     w <- .validate_snp_matrix(markers$snp_add, "snp_add", ids)
-    return(.build_g_snp(w, type = "additive", weights = NULL))
+    allele_freq <- if (!is.null(ref_markers$snp_add)) {
+      ref_W <- .validate_snp_matrix(ref_markers$snp_add, "snp_add_ref")
+      colMeans(ref_W) / 2
+    } else NULL
+    return(.build_g_snp(w, type = "additive", weights = NULL,
+                        allele_freq = allele_freq))
   }
   if (!is.null(markers$mh_add)) {
-    return(.build_g_mh(markers$mh_add, ids, weights = NULL))
+    return(.build_g_mh(markers$mh_add, ids, weights = NULL,
+                       ref_mh = ref_markers$mh_add))
   }
   stop("Cannot extract G_u: no marker data available.")
 }
@@ -206,7 +247,7 @@ run_gwas <- function(
 #' @noRd
 .prepare_mh_for_gwas <- function(mh_list, ids = NULL) {
 
-  # Parse setiap kromosom
+  # Parse every chr
   parsed <- lapply(seq_along(mh_list), function(k) {
     df <- mh_list[[k]]
     chr_label <- if (!is.null(names(mh_list))) {

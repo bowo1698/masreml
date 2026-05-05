@@ -4,7 +4,15 @@
 \alias{run_gwas}
 \title{Run GWAS for SNP or Microhaplotype Markers}
 \usage{
-run_gwas(markers, y, masreml_fit, X = NULL, pi = 0.001, window = 5L)
+run_gwas(
+  markers,
+  y,
+  masreml_fit,
+  X = NULL,
+  pi = 0.001,
+  window = 5L,
+  ref_markers = NULL
+)
 }
 \arguments{
 \item{markers}{list of raw marker inputs. Provide one of:
@@ -30,6 +38,15 @@ more conservative.}
 \item{window}{integer, number of adjacent markers used in moving
 average smoothing of likelihood ratios (default 5). Larger values
 produce smoother posterior probabilities.}
+
+\item{ref_markers}{list of raw marker data for training individuals only,
+in the same format as \code{markers}. If provided, allele frequencies
+for building G_u (used in EMMAX) are computed from \code{ref_markers}
+instead of \code{markers}. Use this when running GWAS in a train/test
+context to avoid data leakage from test individuals into the
+population structure correction matrix.
+Supported elements: \code{snp_add} (matrix) or \code{mh_add} (list).
+If NULL (default), allele frequencies are computed from \code{markers}.}
 }
 \value{
 Object of class \code{"gwas_result"} with elements:
@@ -56,6 +73,7 @@ directly to \code{gwablup()} for GWAS-assisted genomic prediction.
 }
 \examples{
 \dontrun{
+# ── Standard workflow (all individuals) ───────────────────
 # Step 1: fit standard GBLUP
 fit <- masreml(y, markers = list(snp_add = W))
 
@@ -70,6 +88,33 @@ summary(gwas)
 # Step 3: run GWABLUP using GWAS weights
 fit_wa <- gwablup(y, markers = list(snp_add = W), gwas_result = gwas)
 summary(fit_wa)
+
+# ── Train/test workflow (no data leakage) ─────────────────
+# Step 1: fit GBLUP on training only
+fit_tr <- masreml(y_train, markers = list(snp_add = W_train))
+
+# Step 2: run GWAS on training — ref_markers = training markers
+gwas_tr <- run_gwas(
+  markers     = list(snp_add = W_train),
+  y           = y_train,
+  masreml_fit = fit_tr,
+  ref_markers = list(snp_add = W_train)
+)
+
+# Step 3: GWABLUP on training with training-based freq
+fit_wa_tr <- gwablup(
+  y           = y_train,
+  markers     = list(snp_add = W_train),
+  gwas_result = gwas_tr,
+  ref_markers = list(snp_add = W_train)
+)
+
+# Step 4: predict test set
+G_full <- build_G_snp(W_all, ref_W = W_train)
+pred   <- predict(fit_wa_tr,
+                  G_full    = list(snp_add = G_full),
+                  train_ids = rownames(W_train),
+                  test_ids  = rownames(W_test))
 }
 
 }

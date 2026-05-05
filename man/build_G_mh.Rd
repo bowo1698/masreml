@@ -4,7 +4,7 @@
 \alias{build_G_mh}
 \title{Build Multi-allelic Additive Genomic Relationship Matrix}
 \usage{
-build_G_mh(mh_list)
+build_G_mh(mh_list, ref_mh = NULL)
 }
 \arguments{
 \item{mh_list}{list of data.frames, one per chromosome. Each data.frame

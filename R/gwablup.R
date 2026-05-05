@@ -29,6 +29,11 @@
 #' @param max_iter integer, maximum REML iterations (default 100)
 #' @param tol numeric, convergence tolerance (default 1e-6)
 #' @param n_threads integer, number of threads (default: all cores)
+#' @param ref_markers list of raw marker data for training individuals only,
+#'   same format as \code{markers}. If provided, allele frequencies for
+#'   building G_wa are computed from \code{ref_markers} instead of
+#'   \code{markers}. Use in train/test context to avoid data leakage.
+#'   If NULL (default), allele frequencies computed from \code{markers}.
 #'
 #' @return Object of class \code{c("gwablup", "masreml")} —
 #'   identical structure to \code{masreml()} output, with
@@ -57,11 +62,30 @@
 #' summary(fit_wa)
 #'
 #' # ── Compare GBLUP vs GWABLUP ──────────────────────────────
-#' fit_gblup  <- masreml(y, markers = list(snp_add = W))
-#' gwas       <- run_gwas(list(snp_add = W), y, fit_gblup)
+#' fit_gblup   <- masreml(y, markers = list(snp_add = W))
+#' gwas        <- run_gwas(list(snp_add = W), y, fit_gblup)
 #' fit_gwablup <- gwablup(y, list(snp_add = W), gwas)
-#'
 #' cor(fit_gblup$total_gebv, fit_gwablup$total_gebv)
+#'
+#' # ── Train/test workflow (no data leakage) ─────────────────
+#' fit_tr  <- masreml(y_train, markers = list(snp_add = W_train))
+#' gwas_tr <- run_gwas(
+#'   markers     = list(snp_add = W_train),
+#'   y           = y_train,
+#'   masreml_fit = fit_tr,
+#'   ref_markers = list(snp_add = W_train)
+#' )
+#' fit_wa_tr <- gwablup(
+#'   y           = y_train,
+#'   markers     = list(snp_add = W_train),
+#'   gwas_result = gwas_tr,
+#'   ref_markers = list(snp_add = W_train)
+#' )
+#' G_full <- build_G_snp(W_all, ref_W = W_train)
+#' pred   <- predict(fit_wa_tr,
+#'                   G_full    = list(snp_add = G_full),
+#'                   train_ids = rownames(W_train),
+#'                   test_ids  = rownames(W_test))
 #' }
 #'
 #' @export
@@ -69,13 +93,14 @@ gwablup <- function(
     y,
     markers,
     gwas_result,
-    X         = NULL,
-    method    = "auto",
-    solver    = "auto",
-    max_iter  = 100L,
-    tol       = 1e-6,
-    n_threads = NULL,
-    min_weight=1e-4
+    X            = NULL,
+    method       = "auto",
+    solver       = "auto",
+    max_iter     = 100L,
+    tol          = 1e-6,
+    n_threads    = NULL,
+    min_weight   = 1e-4,
+    ref_markers  = NULL
 ) {
   # ── Input validation ──────────────────────────────────────
   if (!is.numeric(y)) {
@@ -113,7 +138,9 @@ gwablup <- function(
     markers     = markers,
     gwas_result = gwas_result,
     ids         = ids,
-    min_weight  = min_weight
+    min_weight  = min_weight,
+    ref_W       = ref_markers$snp_add,
+    ref_mh      = ref_markers$mh_add
   )
 
   # ── Run masreml dengan G_wa ───────────────────────────────

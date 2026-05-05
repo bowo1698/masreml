@@ -47,10 +47,24 @@ fn center_w_vanraden(w_raw: &Array2<f64>, p: &[f64]) -> Array2<f64> {
 pub fn build_g_snp_add_internal(
     w_raw: &Array2<f64>,
     weights: Option<&[f64]>,
+    allele_freq: Option<&[f64]>, 
 ) -> StdResult<GMatrix, MatrixError> {
     validate_w(w_raw, "SNP additive W")?;
 
-    let p = compute_allele_freq(w_raw);
+    let p = match allele_freq {
+        Some(freq) => {
+            if freq.len() != w_raw.ncols() {
+                return Err(MatrixError::InvalidDimension(
+                    format!(
+                        "allele_freq length {} != ncols {}",
+                        freq.len(), w_raw.ncols()
+                    )
+                ));
+            }
+            freq.to_vec()
+        }
+        None => compute_allele_freq(w_raw),
+    };
     let w_c = center_w_vanraden(w_raw, &p);
 
     // Validate weights length if provided
@@ -143,6 +157,7 @@ fn scale_columns(w: &Array2<f64>, weights: &[f64]) -> Array2<f64> {
 pub fn build_g_snp_add(
     w: RMatrix<f64>,
     weights: Nullable<&[f64]>,
+    allele_freq: Nullable<&[f64]>, 
 ) -> Result<RMatrix<f64>> {
     let nrow = w.nrows();
     let ncol = w.ncols();
@@ -155,9 +170,15 @@ pub fn build_g_snp_add(
         Nullable::Null       => None,
     };
 
+    let freq_opt: Option<Vec<f64>> = match allele_freq {
+        Nullable::NotNull(d) => Some(d.to_vec()),
+        Nullable::Null       => None,
+    };
+
     let gmat = build_g_snp_add_internal(
         &w_arr,
         w_opt.as_deref(),
+        freq_opt.as_deref(),
     ).map_err(|e| Error::from(e.to_string()))?;
 
     let g_vec: Vec<f64> = gmat.g.into_raw_vec();

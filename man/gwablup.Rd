@@ -14,7 +14,8 @@ gwablup(
   max_iter = 100L,
   tol = 1e-06,
   n_threads = NULL,
-  min_weight = 1e-04
+  min_weight = 1e-04,
+  ref_markers = NULL
 )
 }
 \arguments{
@@ -42,6 +43,12 @@ Passed to \code{masreml()}}
 \item{tol}{numeric, convergence tolerance (default 1e-6)}
 
 \item{n_threads}{integer, number of threads (default: all cores)}
+
+\item{ref_markers}{list of raw marker data for training individuals only,
+same format as \code{markers}. If provided, allele frequencies for
+building G_wa are computed from \code{ref_markers} instead of
+\code{markers}. Use in train/test context to avoid data leakage.
+If NULL (default), allele frequencies computed from \code{markers}.}
 }
 \value{
 Object of class \code{c("gwablup", "masreml")} —
@@ -79,11 +86,30 @@ fit_wa <- gwablup(y, markers = list(mh_add = mh_list), gwas_result = gwas)
 summary(fit_wa)
 
 # ── Compare GBLUP vs GWABLUP ──────────────────────────────
-fit_gblup  <- masreml(y, markers = list(snp_add = W))
-gwas       <- run_gwas(list(snp_add = W), y, fit_gblup)
+fit_gblup   <- masreml(y, markers = list(snp_add = W))
+gwas        <- run_gwas(list(snp_add = W), y, fit_gblup)
 fit_gwablup <- gwablup(y, list(snp_add = W), gwas)
-
 cor(fit_gblup$total_gebv, fit_gwablup$total_gebv)
+
+# ── Train/test workflow (no data leakage) ─────────────────
+fit_tr  <- masreml(y_train, markers = list(snp_add = W_train))
+gwas_tr <- run_gwas(
+  markers     = list(snp_add = W_train),
+  y           = y_train,
+  masreml_fit = fit_tr,
+  ref_markers = list(snp_add = W_train)
+)
+fit_wa_tr <- gwablup(
+  y           = y_train,
+  markers     = list(snp_add = W_train),
+  gwas_result = gwas_tr,
+  ref_markers = list(snp_add = W_train)
+)
+G_full <- build_G_snp(W_all, ref_W = W_train)
+pred   <- predict(fit_wa_tr,
+                  G_full    = list(snp_add = G_full),
+                  train_ids = rownames(W_train),
+                  test_ids  = rownames(W_test))
 }
 
 }

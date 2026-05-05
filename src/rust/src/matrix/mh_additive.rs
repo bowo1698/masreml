@@ -1,3 +1,4 @@
+//masreml/src/rust/src/matrix/mh_additive.rs
 use extendr_api::prelude::*;
 use ndarray::{Array1, Array2};
 use rayon::prelude::*;
@@ -86,6 +87,8 @@ pub fn build_g_mh_add_internal(
     hap2: &Array2<i32>,
     n_alleles_per_locus: &[usize],
     weights: Option<&[f64]>,        // weight per locus (PP_j from GWABLUP)
+    ref_hap1: Option<&Array2<i32>>,
+    ref_hap2: Option<&Array2<i32>>,
 ) -> StdResult<GMatrix, MatrixError> {
     let n = hap1.nrows();
     let n_loci = hap1.ncols();
@@ -132,21 +135,31 @@ pub fn build_g_mh_add_internal(
         }
 
         // Compute allele frequencies for this locus
+        let (ref_h1_col, ref_h2_col);
+        let (h1_for_freq, h2_for_freq) = if let (Some(r1), Some(r2)) = (ref_hap1, ref_hap2) {
+            ref_h1_col = r1.column(locus).to_owned();
+            ref_h2_col = r2.column(locus).to_owned();
+            (&ref_h1_col, &ref_h2_col)
+        } else {
+            (&h1_col, &h2_col)
+        };
+        let n_ref = h1_for_freq.len();
+
         let mut counts = vec![0usize; n_alleles];
-        h1_col.iter().for_each(|&a| {
+        h1_for_freq.iter().for_each(|&a| {
             let idx = a as usize;
             if idx < counts.len() { counts[idx] += 1; }
         });
-        h2_col.iter().for_each(|&a| {
+        h2_for_freq.iter().for_each(|&a| {
             let idx = a as usize;
             if idx < counts.len() { counts[idx] += 1; }
         });
-        let total_alleles = (2 * n) as f64;
+        let total_alleles = (2 * n_ref) as f64;
         let p: Vec<f64> = counts.iter()
             .map(|&c| c as f64 / total_alleles)
             .collect();
 
-        // Find most frequent allele to drop
+        // Find most frequent allele to drop — from ref (training)
         let drop_idx = counts.iter()
             .enumerate()
             .max_by_key(|(_, &c)| c)
@@ -199,6 +212,8 @@ pub fn build_g_mh_add(
     hap2: RMatrix<i32>,
     n_alleles: &[i32],
     weights: Nullable<&[f64]>,
+    ref_hap1: Nullable<RMatrix<i32>>,
+    ref_hap2: Nullable<RMatrix<i32>>,
 ) -> Result<RMatrix<f64>> {
     let nrow = hap1.nrows();
     let ncol = hap1.ncols();
@@ -222,11 +237,30 @@ pub fn build_g_mh_add(
         Nullable::Null       => None,
     };
 
+    let ref_h1_opt: Option<Array2<i32>> = match ref_hap1 {
+        Nullable::NotNull(m) => {
+            let nr = m.nrows(); let nc = m.ncols();
+            Some(Array2::from_shape_vec((nr, nc), m.data().to_vec())
+                .map_err(|e| Error::from(e.to_string()))?)
+        },
+        Nullable::Null => None,
+    };
+    let ref_h2_opt: Option<Array2<i32>> = match ref_hap2 {
+        Nullable::NotNull(m) => {
+            let nr = m.nrows(); let nc = m.ncols();
+            Some(Array2::from_shape_vec((nr, nc), m.data().to_vec())
+                .map_err(|e| Error::from(e.to_string()))?)
+        },
+        Nullable::Null => None,
+    };
+
     let gmat = build_g_mh_add_internal(
         &h1,
         &h2,
         &n_alleles_usize,
         w_opt.as_deref(),
+        ref_h1_opt.as_ref(),
+        ref_h2_opt.as_ref(),
     ).map_err(|e| Error::from(e.to_string()))?;
 
     let n = gmat.g.nrows();
@@ -242,6 +276,8 @@ pub fn build_w_mh_internal(
     hap1: &Array2<i32>,
     hap2: &Array2<i32>,
     n_alleles_per_locus: &[usize],
+    ref_hap1: Option<&Array2<i32>>,
+    ref_hap2: Option<&Array2<i32>>,
 ) -> StdResult<(Array2<f64>, Vec<usize>), MatrixError> {
     let n      = hap1.nrows();
     let n_loci = hap1.ncols();
@@ -265,16 +301,26 @@ pub fn build_w_mh_internal(
         let h2_col = hap2.column(locus).to_owned();
 
         // Compute allele frequencies
+        let (ref_h1_col, ref_h2_col);
+        let (h1_for_freq, h2_for_freq) = if let (Some(r1), Some(r2)) = (ref_hap1, ref_hap2) {
+            ref_h1_col = r1.column(locus).to_owned();
+            ref_h2_col = r2.column(locus).to_owned();
+            (&ref_h1_col, &ref_h2_col)
+        } else {
+            (&h1_col, &h2_col)
+        };
+        let n_ref = h1_for_freq.len();
+
         let mut counts = vec![0usize; n_alleles];
-        h1_col.iter().for_each(|&a| {
+        h1_for_freq.iter().for_each(|&a| {
             let idx = a as usize;
             if idx < counts.len() { counts[idx] += 1; }
         });
-        h2_col.iter().for_each(|&a| {
+        h2_for_freq.iter().for_each(|&a| {
             let idx = a as usize;
             if idx < counts.len() { counts[idx] += 1; }
         });
-        let total_alleles = (2 * n) as f64;
+        let total_alleles = (2 * n_ref) as f64;
         let p: Vec<f64> = counts.iter()
             .map(|&c| c as f64 / total_alleles)
             .collect();

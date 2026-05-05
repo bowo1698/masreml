@@ -4,7 +4,7 @@
 \alias{build_G_snp}
 \title{Build SNP Additive Genomic Relationship Matrix}
 \usage{
-build_G_snp(W)
+build_G_snp(W, ref_W = NULL)
 }
 \arguments{
 \item{W}{numeric matrix (n x m) of raw genotype codes, where n is the

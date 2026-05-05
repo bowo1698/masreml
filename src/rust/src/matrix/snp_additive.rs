@@ -168,10 +168,9 @@ pub fn build_g_snp_add(
     let nrow = w.nrows();
     let ncol = w.ncols();
     let data: Vec<f64> = w.data().to_vec();
-    let w_arr = Array2::from_shape_vec((ncol, nrow), data)
-        .map_err(|e| Error::from(e.to_string()))?
-        .reversed_axes();
-        .to_owned();
+    let w_transposed = Array2::from_shape_vec((ncol, nrow), data)
+        .map_err(|e| Error::from(e.to_string()))?;
+    let w_arr = w_transposed.reversed_axes().to_owned();
 
     let w_opt: Option<Vec<f64>> = match weights {
         Nullable::NotNull(d) => Some(d.to_vec()),

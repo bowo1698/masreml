@@ -100,10 +100,10 @@ pub fn build_g_snp_add_internal(
                     "k = 0 after weighting".to_string()
                 ));
             }
-            compute_gram_parallel(&w_scaled, k_weighted)
+            w_scaled.dot(&w_scaled.t()).mapv(|v| v / k_weighted)
         }
         None => {
-            compute_gram_parallel(&w_c, k)
+            w_c.dot(&w_c.t()).mapv(|v| v / k)
         }
     };
 

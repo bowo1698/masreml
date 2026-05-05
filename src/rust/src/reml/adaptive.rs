@@ -74,10 +74,11 @@ fn parse_and_run(
     let y = Array1::from_vec(y_slice.to_vec());
 
     // Parse X
-    let x = Array2::from_shape_vec(
-        (x_rmat.nrows(), x_rmat.ncols()),
+    let x_t = Array2::from_shape_vec(
+        (x_rmat.ncols(), x_rmat.nrows()),
         x_rmat.data().to_vec()
     ).map_err(|e| RemlError::InvalidInput(e.to_string()))?;
+    let x = x_t.reversed_axes().to_owned();
 
     // Parse G list: named list of n×n matrices
     let mut g_matrices: Vec<(Array2<f64>, String)> = Vec::new();
@@ -87,10 +88,11 @@ fn parse_and_run(
                 format!("G matrix '{}' is not a numeric matrix", name)
             ))?;
         let g_n = g_rmat.nrows();
-        let g = Array2::from_shape_vec(
+        let g_t = Array2::from_shape_vec(
             (g_n, g_n),
             g_rmat.data().to_vec()
         ).map_err(|e| RemlError::InvalidInput(e.to_string()))?;
+        let g = g_t.reversed_axes().to_owned();
 
         g_matrices.push((g, name.to_string()));
     }

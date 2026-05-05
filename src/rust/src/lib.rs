@@ -88,10 +88,11 @@ fn r_solve_ebv(
 
     // Parse inputs
     let y_arr = ndarray::Array1::from_vec(y.to_vec());
-    let x_arr = ndarray::Array2::from_shape_vec(
-        (x.nrows(), x.ncols()),
+    let x_t = ndarray::Array2::from_shape_vec(
+        (x.ncols(), x.nrows()),
         x.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let x_arr = x_t.reversed_axes().to_owned();
 
     let mut g_matrices: Vec<(ndarray::Array2<f64>, String)> = Vec::new();
     for (name, robj) in g_list.iter() {
@@ -99,10 +100,11 @@ fn r_solve_ebv(
             .map_err(|_| Error::from(
                 format!("G matrix '{}' is not a numeric matrix", name)
             ))?;
-        let g = ndarray::Array2::from_shape_vec(
-            (g_rmat.nrows(), g_rmat.ncols()),
+        let g_t = ndarray::Array2::from_shape_vec(
+            (g_rmat.ncols(), g_rmat.nrows()),
             g_rmat.data().to_vec()
         ).map_err(|e| Error::from(e.to_string()))?;
+        let g = g_t.reversed_axes().to_owned();
         g_matrices.push((g, name.to_string()));
     }
 
@@ -159,20 +161,23 @@ fn r_run_emmax_snp(
     let n = y.len();
     let y_arr = ndarray::Array1::from_vec(y.to_vec());
 
-    let w_arr = ndarray::Array2::from_shape_vec(
-        (w.nrows(), w.ncols()),
+    let w_t = ndarray::Array2::from_shape_vec(
+        (w.ncols(), w.nrows()),
         w.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let w_arr = w_t.reversed_axes().to_owned();
 
-    let x_arr = ndarray::Array2::from_shape_vec(
-        (x.nrows(), x.ncols()),
+    let x_t = ndarray::Array2::from_shape_vec(
+        (x.ncols(), x.nrows()),
         x.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let x_arr = x_t.reversed_axes().to_owned();
 
-    let g_arr = ndarray::Array2::from_shape_vec(
-        (g_u.nrows(), g_u.ncols()),
+    let g_t = ndarray::Array2::from_shape_vec(
+        (g_u.ncols(), g_u.nrows()),
         g_u.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let g_arr = g_t.reversed_axes().to_owned();
 
     let g_list = vec![(g_arr, "g".to_string())];
     let sigma2 = vec![sigma2_g, sigma2_e];
@@ -233,16 +238,18 @@ fn r_run_emmax_mh(
     let (w_mh, block_sizes) = build_w_mh_internal(&h1, &h2, &n_alleles_usize, None, None)
         .map_err(|e| Error::from(e.to_string()))?;
 
-    let x_arr = ndarray::Array2::from_shape_vec(
-        (x.nrows(), x.ncols()),
+    let x_t = ndarray::Array2::from_shape_vec(
+        (x.ncols(), x.nrows()),
         x.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let x_arr = x_t.reversed_axes().to_owned();
 
     // Build V = G_u * sigma2_g + I * sigma2_e
-    let g_arr = ndarray::Array2::from_shape_vec(
-        (g_u.nrows(), g_u.ncols()),
+    let g_t = ndarray::Array2::from_shape_vec(
+        (g_u.ncols(), g_u.nrows()),
         g_u.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let g_arr = g_t.reversed_axes().to_owned();
 
     let g_list = vec![(g_arr, "g".to_string())];
     let sigma2  = vec![sigma2_g, sigma2_e];

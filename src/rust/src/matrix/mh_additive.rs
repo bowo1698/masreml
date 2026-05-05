@@ -242,15 +242,17 @@ pub fn build_g_mh_add(
     let nrow = hap1.nrows();
     let ncol = hap1.ncols();
 
-    let h1 = Array2::from_shape_vec(
-        (nrow, ncol),
+    let h1_t = Array2::from_shape_vec(
+        (ncol, nrow),
         hap1.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let h1 = h1_t.reversed_axes().to_owned();
 
-    let h2 = Array2::from_shape_vec(
-        (nrow, ncol),
+    let h2_t = Array2::from_shape_vec(
+        (ncol, nrow),
         hap2.data().to_vec()
     ).map_err(|e| Error::from(e.to_string()))?;
+    let h2 = h2_t.reversed_axes().to_owned();
 
     let n_alleles_usize: Vec<usize> = n_alleles.iter()
         .map(|&a| a as usize)
@@ -264,16 +266,18 @@ pub fn build_g_mh_add(
     let ref_h1_opt: Option<Array2<i32>> = match ref_hap1 {
         Nullable::NotNull(m) => {
             let nr = m.nrows(); let nc = m.ncols();
-            Some(Array2::from_shape_vec((nr, nc), m.data().to_vec())
-                .map_err(|e| Error::from(e.to_string()))?)
+            let t = Array2::from_shape_vec((nc, nr), m.data().to_vec())
+                .map_err(|e| Error::from(e.to_string()))?;
+            Some(t.reversed_axes().to_owned())
         },
         Nullable::Null => None,
     };
     let ref_h2_opt: Option<Array2<i32>> = match ref_hap2 {
         Nullable::NotNull(m) => {
             let nr = m.nrows(); let nc = m.ncols();
-            Some(Array2::from_shape_vec((nr, nc), m.data().to_vec())
-                .map_err(|e| Error::from(e.to_string()))?)
+            let t = Array2::from_shape_vec((nc, nr), m.data().to_vec())
+                .map_err(|e| Error::from(e.to_string()))?;
+            Some(t.reversed_axes().to_owned())
         },
         Nullable::Null => None,
     };

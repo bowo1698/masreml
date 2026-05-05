@@ -321,9 +321,16 @@ evaluate_prediction <- function(gebv, y, h2 = NULL, tbv = NULL,
   r_MG     <- if (!is.null(h2) && !is.na(h2) && h2 > 0)
                 r_test_y / sqrt(h2)
               else NA_real_
-  auc      <- if (!is.null(fitted_prob))
-                .compute_auc(as.integer(y), fitted_prob)
-              else NA_real_
+  auc      <- if (!is.null(fitted_prob)) {
+              tryCatch({
+                n1 <- sum(y == 1); n0 <- sum(y == 0)
+                if (n1 == 0 || n0 == 0) NA_real_
+                else {
+                  s1 <- fitted_prob[y == 1]; s0 <- fitted_prob[y == 0]
+                  mean(outer(s1, s0, ">")) + 0.5 * mean(outer(s1, s0, "=="))
+                }
+              }, error = function(e) NA_real_)
+            } else NA_real_
   rmse     <- sqrt(mean((gebv - y)^2, na.rm = TRUE))
 
   data.frame(

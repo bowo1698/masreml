@@ -250,6 +250,93 @@ predict.masreml <- function(
   )
 }
 
+#' Evaluate Out-of-Sample Genomic Prediction
+#'
+#' Computes prediction accuracy metrics for test individuals. Designed
+#' to complement \code{predict.masreml()} for out-of-sample evaluation.
+#' Works with any GEBV source (masreml, masbayes, or other models).
+#'
+#' @param gebv numeric vector of predicted GEBV for test individuals
+#' @param y numeric vector of observed phenotypes for test individuals
+#' @param h2 numeric, heritability from fitted model for r_MG computation.
+#'   Typically \code{fit$varcomp$h2} (single component) or a specific
+#'   component. If NULL, r_MG is returned as NA.
+#' @param tbv numeric vector of true breeding values (simulation only).
+#'   If provided, \code{r_MG_true = cor(gebv, tbv)} is computed directly
+#'   without requiring h2. If NULL, r_MG_true is NA.
+#' @param fitted_prob numeric vector of fitted probabilities P(y=1) for
+#'   binary trait, typically \code{pred$fitted} from \code{predict.masreml()}.
+#'   If NULL, AUC is returned as NA.
+#'
+#' @return data.frame with columns:
+#'   \itemize{
+#'     \item \code{r_test_y}: cor(gebv, y) — predictive ability
+#'     \item \code{r_test_g}: cor(gebv, tbv) — accuracy vs true BV, NA if tbv NULL
+#'     \item \code{bias}: regression slope lm(y ~ gebv), expect 1 = unbiased
+#'     \item \code{r_MG}: r_test_y / sqrt(h2), NA if h2 NULL
+#'     \item \code{AUC}: area under ROC curve, NA if fitted_prob NULL
+#'     \item \code{RMSE}: sqrt(mean((gebv - y)^2))
+#'   }
+#'
+#' @seealso \code{\link{predict.masreml}}, \code{\link{compute_accuracy}}
+#'
+#' @examples
+#' \dontrun{
+#' pred <- predict(fit, G_full = list(g = G_full),
+#'                 train_ids = train_ids, test_ids = test_ids)
+#'
+#' # Continuous trait
+#' evaluate_prediction(
+#'   gebv = pred$total_gebv,
+#'   y    = y_test,
+#'   h2   = fit$varcomp$h2["g"],
+#'   tbv  = tbv_test
+#' )
+#'
+#' # Binary trait
+#' evaluate_prediction(
+#'   gebv        = pred$total_gebv,
+#'   y           = y_test,
+#'   h2          = fit$varcomp$h2["g"],
+#'   fitted_prob = pred$fitted
+#' )
+#' }
+#'
+#' @export
+evaluate_prediction <- function(gebv, y, h2 = NULL, tbv = NULL,
+                                fitted_prob = NULL) {
+  if (length(gebv) != length(y)) {
+    stop("'gebv' and 'y' must have same length.")
+  }
+  if (!is.null(tbv) && length(tbv) != length(gebv)) {
+    stop("'tbv' must have same length as 'gebv'.")
+  }
+  if (!is.null(fitted_prob) && length(fitted_prob) != length(gebv)) {
+    stop("'fitted_prob' must have same length as 'gebv'.")
+  }
+
+  r_test_y <- cor(gebv, y, use = "complete.obs")
+  r_test_g <- if (!is.null(tbv)) cor(gebv, tbv, use = "complete.obs") else NA_real_
+  bias     <- tryCatch(coef(lm(y ~ gebv))[2], error = function(e) NA_real_)
+  r_MG     <- if (!is.null(h2) && !is.na(h2) && h2 > 0)
+                r_test_y / sqrt(h2)
+              else NA_real_
+  auc      <- if (!is.null(fitted_prob))
+                .compute_auc(as.integer(y), fitted_prob)
+              else NA_real_
+  rmse     <- sqrt(mean((gebv - y)^2, na.rm = TRUE))
+
+  data.frame(
+    r_test_y = round(r_test_y, 4),
+    r_test_g = round(r_test_g, 4),
+    bias     = round(bias, 4),
+    r_MG     = round(r_MG, 4),
+    AUC      = round(auc, 4),
+    RMSE     = round(rmse, 4),
+    row.names = NULL
+  )
+}
+
 # ============================================================
 # Internal helpers
 # ============================================================

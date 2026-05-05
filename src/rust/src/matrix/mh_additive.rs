@@ -5,6 +5,23 @@ use rayon::prelude::*;
 
 use super::{GMatrix, MatrixError, StdResult};
 
+/// Sum-to-zero constraint for W_αh per locus
+/// Ensures Σ_k p_k * w_ik = 0 for each individual i
+fn project_sum_to_zero(w: &mut Array2<f64>, freqs: &[f64]) {
+    let n     = w.nrows();
+    let n_col = w.ncols();
+    let freq_sum: f64 = freqs.iter().sum();
+    if freq_sum < 1e-10 { return; }
+    for i in 0..n {
+        let weighted_sum: f64 = (0..n_col)
+            .map(|k| freqs[k] * w[[i, k]])
+            .sum();
+        for k in 0..n_col {
+            w[[i, k]] -= freqs[k] * weighted_sum / freq_sum;
+        }
+    }
+}
+
 /// Da (2015) W_αh coding for multi-allelic haplotype markers
 ///
 /// For each individual i and haplotype allele k (excluding most frequent):
@@ -167,7 +184,14 @@ pub fn build_g_mh_add_internal(
             .unwrap_or(0);
 
         // Code W_αh for this locus
-        let w_l = code_w_mh(&h1_col, &h2_col, &p, drop_idx);
+        let mut w_l = code_w_mh(&h1_col, &h2_col, &p, drop_idx);
+
+        // Sum-to-zero constraint — freqs of kept alleles (excluding drop_idx)
+        let kept_freqs: Vec<f64> = (0..p.len())
+            .filter(|&k| k != drop_idx)
+            .map(|k| p[k])
+            .collect();
+        project_sum_to_zero(&mut w_l, &kept_freqs);
 
         // Scale W_l by sqrt(weight) per locus
         // W_l_scaled = W_l * sqrt(d_l)
@@ -331,8 +355,16 @@ pub fn build_w_mh_internal(
             .map(|(i, _)| i)
             .unwrap_or(0);
 
-        // Build W_αh untuk locus ini
-        let w_l = code_w_mh(&h1_col, &h2_col, &p, drop_idx);
+        // Build W_αh for this locus
+        let mut w_l = code_w_mh(&h1_col, &h2_col, &p, drop_idx);
+
+        // Sum-to-zero constraint
+        let kept_freqs: Vec<f64> = (0..p.len())
+            .filter(|&k| k != drop_idx)
+            .map(|k| p[k])
+            .collect();
+        project_sum_to_zero(&mut w_l, &kept_freqs);
+
         let n_cols = w_l.ncols();
 
         // Isi ke w_mh

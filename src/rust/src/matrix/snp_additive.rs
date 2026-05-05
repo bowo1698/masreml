@@ -2,7 +2,7 @@ use extendr_api::prelude::*;
 use ndarray::{Array2, Axis};
 use ndarray::parallel::prelude::*;
 
-use super::{GMatrix, MatrixError, compute_k, validate_w, StdResult};
+use super::{GMatrix, MatrixError, validate_w, StdResult};
 
 /// Calculate allele frequency from W raw (0/1/2 coding)
 /// p_j = mean(W_j) / 2
@@ -79,24 +79,30 @@ pub fn build_g_snp_add_internal(
         }
     }
 
+    // k = 2 * sum(p_j * (1 - p_j))
+    // always count from allele_freq (training of full)
+    let k = 2.0 * p.iter().map(|&pj| pj * (1.0 - pj)).sum::<f64>();
+    if k == 0.0 {
+        return Err(MatrixError::InvalidDimension(
+            "k = 0, all markers are monomorphic".to_string()
+        ));
+    }
+
     let g = match weights {
         Some(d) => {
             let w_scaled = scale_columns(&w_c, d);
-            let k = compute_k(&w_scaled);
-            if k == 0.0 {
+            let k_weighted = 2.0 * p.iter()
+                .zip(d.iter())
+                .map(|(&pj, &dj)| pj * (1.0 - pj) * dj)
+                .sum::<f64>();
+            if k_weighted == 0.0 {
                 return Err(MatrixError::InvalidDimension(
                     "k = 0 after weighting".to_string()
                 ));
             }
-            compute_gram_parallel(&w_scaled, k)
+            compute_gram_parallel(&w_scaled, k_weighted)
         }
         None => {
-            let k = compute_k(&w_c);
-            if k == 0.0 {
-                return Err(MatrixError::InvalidDimension(
-                    "k = 0, all markers are monomorphic".to_string()
-                ));
-            }
             compute_gram_parallel(&w_c, k)
         }
     };

@@ -26,7 +26,13 @@ $$D = \frac{W_\delta W_\delta'}{k_\delta}, \quad k_\delta = \frac{\text{tr}(W_\d
 
 where the dominance coding captures heterozygote deviation from additive expectation:
 
-$$w_{\delta,ij} = \begin{cases} -2p_j^2 & X_{ij} = 0 \text{ (AA)} \\ 2p_j(1-p_j) & X_{ij} = 1 \text{ (Aa)} \\ -2(1-p_j)^2 & X_{ij} = 2 \text{ (aa)} \end{cases}$$
+$$
+w_{\delta,ij} = \begin{cases} 
+-2p_j^2 & X_{ij} = 0 \text{ (AA)} \\ 
+2p_j(1-p_j) & X_{ij} = 1 \text{ (Aa)} \\ 
+-2(1-p_j)^2 & X_{ij} = 2 \text{ (aa)} 
+\end{cases}
+$$
 
 **Microhaplotype additive $A_{gh}$ (Da 2015)**
 
@@ -34,7 +40,13 @@ $$A_{gh} = \frac{\sum_\alpha W_\alpha W_\alpha'}{k_{gh}}, \quad k_{gh} = \frac{\
 
 where $\alpha$ indexes haplotype blocks. For each block, the W_αh matrix is built by dropping the most frequent allele and applying Da (2015) coding for each retained allele $k$:
 
-$$w_{\alpha h,ik} = \begin{cases} 2p_{\alpha k} & \text{individual } i \text{ does not carry allele } k \\ -(1 - 2p_{\alpha k}) & \text{individual } i \text{ heterozygous for } k \\ -2(1 - p_{\alpha k}) & \text{individual } i \text{ homozygous for } k \end{cases}$$
+$$
+w_{\alpha h,ik} = \begin{cases} 
+2p_{\alpha k} & \text{individual } i \text{ does not carry allele } k \\ 
+-(1 - 2p_{\alpha k}) & \text{individual } i \text{ heterozygous for } k \\ 
+-2(1 - p_{\alpha k}) & \text{individual } i \text{ homozygous for } k 
+\end{cases}
+$$
 
 A sum-to-zero constraint $\sum_k p_{\alpha k} \cdot w_{i\alpha k} = 0$ is enforced per individual per locus, ensuring orthogonal allele effect decomposition. Each block contributes $n_\alpha - 1$ allele dimensions to the relationship matrix.
 
@@ -52,9 +64,15 @@ where $s_i$ and $d_i$ are the sire and dam indices of individual $i$, and $F_i$ 
 
 $$\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \mathbf{u} + \mathbf{e}, \quad \mathbf{u} \sim \mathcal{N}(\mathbf{0},\ \mathbf{G}\sigma^2_g), \quad \mathbf{e} \sim \mathcal{N}(\mathbf{0},\ \mathbf{I}\sigma^2_e)$$
 
-Multi-component models extend to $\mathbf{V} = \sum_k \mathbf{G}_k \sigma^2_{g_k} + \mathbf{I}\sigma^2_e$, to enable simultaneous partitioning of additive + dominance, or SNP + microhaplotype variance components.
+Multi-component models extend to 
 
-Variance components are estimated by REML; GEBV per component are solved from the mixed model equations (MME): $\hat{\mathbf{u}}_k = \mathbf{G}_k \mathbf{V}^{-1}(\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}})\,\sigma^2_{g_k}$.
+$$\mathbf{V} = \sum_k \mathbf{G}_k \sigma^2_{g_k} + \mathbf{I}\sigma^2_e$$
+
+to enable simultaneous partitioning of additive + dominance, or SNP + microhaplotype variance components.
+
+Variance components are estimated by REML; GEBV per component are solved from the mixed model equations (MME): 
+
+$$\hat{\mathbf{u}}_k = \mathbf{G}_k \mathbf{V}^{-1}(\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}})\,\sigma^2_{g_k}$$.
 
 For binary traits (0/1), a single-step Laplace approximation is applied on the liability scale using a working response derived from the logit or probit link, with heritability transformed via the Dempster-Falconer formula.
 

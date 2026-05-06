@@ -1,32 +1,24 @@
-# examples/03_snp_vs_mh_simulation.R
+# examples/03_marker_QTL_congruency_theory.R
 #
 # Simulation proof-of-concept: SNP vs MH under two QTL architecture scenarios
 #
-# Demonstrates the Marker-QTL Unit Congruence Theory:
-# prediction accuracy is maximized when marker unit aligns with the biological QTL unit.
+# Demonstrates the Marker-QTL Unit Congruence Theory
+# Hypothesis: Prediction accuracy is maximized when marker unit aligns with the biological QTL unit.
 #
 # Two QTL scenarios are contrasted:
-#   QTL@SNP — true genetic effects defined at individual SNP level (Scenario 1b)
-#   QTL@MH  — true genetic effects defined at haplotype block level (Scenario 2b)
+#   QTL@SNP — true genetic effects defined at individual SNP level
+#   QTL@MH  — true genetic effects defined at haplotype block level
 #
-# In both scenarios, MH markers are derived from the same SNP data via phasing
+# In both scenarios, microhaplotype markers are derived from the same SNP data via phasing
 # and haplotype encoding, ensuring a fair comparison where the only difference
 # is the marker representation, not the underlying genotype data.
-#
-# Key findings:
-#   - When QTL@MH: MH substantially outperforms SNP (gap ~0.20-0.26 in r_test_g)
-#   - When QTL@SNP: SNP outperforms MH only marginally (gap ~0.04-0.25 in r_test_g)
-#   - This asymmetry reflects MH ⊃ SNP informationally:
-#     MH can partially recover SNP-level signals via haplotype encoding,
-#     but SNP cannot recover combinatorial haplotype effects
-#   - Pattern is consistent across continuous and binary traits,
-#     BayesR and BayesA, and all evaluation metrics (r_test_g, AUC, bias)
 #
 # Models evaluated:
 #   - BayesR (4-component mixture prior, variable selection)
 #   - BayesA (marker-specific variance, no variable selection)
+#   - GBLUP and GWABLUP
 #   x SNP (VanRaden 2008 coding)
-#   x MH  (Da 2015 W_ah coding via construct_wah_matrix)
+#   x Microhaplotype (Da 2015 W_ah coding via construct_wah_matrix)
 #   x Continuous and binary trait
 #   x Train/test split (n_train=200, n_test=100)
 #
@@ -38,10 +30,11 @@
 #   h2_post  : posterior heritability estimate
 #   AUC      : area under ROC curve (binary trait only)
 #
-# Requirements: masbayes, pROC
-# Usage: source("examples/03_snp_vs_mh_simulation.R")
+# Requirements: masbayes, masreml
+# Usage: source("examples/03_marker_QTL_congruency_theory.R")
 
 library(masbayes)
+library(masreml)
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
 config <- list(
@@ -208,7 +201,7 @@ mcmc_p <- config$mcmc
 
 run_scenario <- function(sc, W_tr, W_te, y_tr, y_te, g_te,
                          marker_label, trait_type = "continuous") {
-  y_train <- y_tr   # sudah di-assign dengan benar dari caller
+  y_train <- y_tr
   y_test  <- y_te
   resp    <- if (trait_type == "binary") "binary" else "gaussian"
 
@@ -298,13 +291,12 @@ run_scenario <- function(sc, W_tr, W_te, y_tr, y_te, g_te,
 }
 
 # ── 7b. GBLUP via masreml ────────────────────────────────────────────────────
-library(masreml)
 
-# SNP: via build_G_snp dengan ref_W
+# SNP: via build_G_snp with ref_W
 rownames(geno_snp_all) <- as.character(1:n_total)
 G_snp_full <- build_G_snp(geno_snp_all, ref_W = geno_snp_all[idx_train, ])
 
-# MH: via build_G_mh dengan hap_matrix mode
+# MH: via build_G_mh with hap_matrix mode
 rownames(hap_block_all) <- as.character(1:n_total)
 G_mh_full <- build_G_mh(
   mh_list = hap_block_all,
@@ -395,12 +387,12 @@ run_gwablup_scenario <- function(sc, marker_type, y_tr, y_te, g_te,
     fit_tr <- masreml(y = y_named, G = list(g = G_tr),
                       trait = trait_type, method = "auto")
 
-    # Step 2: GWAS on training dengan ref_markers untuk hindari leakage
+    # Step 2: GWAS on training with ref_markers
     if (marker_type == "SNP") {
       markers_tr  <- list(snp_add = geno_train)
       ref_markers <- list(snp_add = geno_train)
     } else {
-      # MH: pakai hap_block_all langsung — masreml handle re-encoding internal
+      # MH: uses direct hap_block_all — masreml handles re-encoding internal
       hap_tr      <- hap_block_all[idx_train, ]
       rownames(hap_tr) <- train_ids
       markers_tr  <- list(mh_add = hap_tr)
@@ -414,7 +406,7 @@ run_gwablup_scenario <- function(sc, marker_type, y_tr, y_te, g_te,
       ref_markers = ref_markers
     )
 
-    # Step 3: GWABLUP pada training
+    # Step 3: GWABLUP on training
     fit_wa <- gwablup(
       y           = y_named,
       markers     = markers_tr,
@@ -423,7 +415,7 @@ run_gwablup_scenario <- function(sc, marker_type, y_tr, y_te, g_te,
       ref_markers = ref_markers
     )
 
-    # Step 4: prediksi test via G_full
+    # Step 4: predicts test via G_full
     g_full_named        <- list(G_full)
     names(g_full_named) <- comp_name
     pred <- predict(fit_wa,
@@ -465,7 +457,7 @@ run_gwablup_scenario <- function(sc, marker_type, y_tr, y_te, g_te,
              p=result$p, stringsAsFactors=FALSE)
 }
 
-# Siapkan geno_train dengan rownames untuk masreml
+# Prepare geno_train with rownames for masreml
 geno_train <- geno_snp_all[idx_train, ]
 rownames(geno_train) <- train_ids_ch
 storage.mode(geno_train) <- "double"

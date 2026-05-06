@@ -6,27 +6,77 @@
 [![Examples](https://img.shields.io/badge/Examples-Click%20Here-blue)](examples/)
 [![Rust][Rust]][Rust-url]
 
-**Universal REML-BLUP for SNP and Microhaplotype Genomic Prediction**
+**Universal REML-BLUP for biallelic SNP and multi-allelic microhaplotype genomic prediction**
 
-`masreml` is an R package with a Rust backend (via [extendr](https://extendr.github.io/)) for
-fast and flexible genomic prediction using REML-BLUP. It supports SNP additive, SNP dominance,
-microhaplotype (MH) additive, and pedigree-based relationship matrices, and handles both
-continuous and binary traits.
+`masreml` implements **REML-BLUP genomic prediction** for both bi-allelic SNP and multi-allelic microhaplotype markers. The package supports four relationship matrix types, multiple REML algorithms, and binary traits, with all numerical computation handled by a Rust backend.
 
 ---
 
-## Features
+## Relationship Matrices
 
-- **Multiple marker types**: SNP additive (VanRaden 2008), SNP dominance (Da et al. 2014),
-  microhaplotype additive (Da 2015 W_αh coding), pedigree-based A matrix
-- **Multiple REML algorithms**: HE regression, AI-REML, EM-REML, HE-initialized AI-REML (HI)
-- **Binary trait support**: single-step Laplace approximation on liability scale (logit or probit link)
+**SNP additive G (VanRaden 2008)**
+
+$$G = \frac{W W'}{k}, \quad k = \sum_j 2p_j(1-p_j)$$
+
+where $W_{ij} = X_{ij} - 2p_j$ is the allele-frequency-centered genotype matrix and $p_j$ is the allele frequency at locus $j$.
+
+**SNP dominance D (Da et al. 2015)**
+
+$$D = \frac{W_\delta W_\delta'}{k_\delta}, \quad k_\delta = \frac{\text{tr}(W_\delta W_\delta')}{n}$$
+
+where the dominance coding captures heterozygote deviation from additive expectation:
+
+$$w_{\delta,ij} = \begin{cases} -2p_j^2 & X_{ij} = 0 \text{ (AA)} \\ 2p_j(1-p_j) & X_{ij} = 1 \text{ (Aa)} \\ -2(1-p_j)^2 & X_{ij} = 2 \text{ (aa)} \end{cases}$$
+
+**Microhaplotype additive $A_{gh}$ (Da 2015)**
+
+$$A_{gh} = \frac{\sum_\alpha W_\alpha W_\alpha'}{k_{gh}}, \quad k_{gh} = \frac{\text{tr}\!\left(\sum_\alpha W_\alpha W_\alpha'\right)}{n}$$
+
+where $\alpha$ indexes haplotype blocks. For each block, the W_αh matrix is built by dropping the most frequent allele and applying Da (2015) coding for each retained allele $k$:
+
+$$w_{\alpha h,ik} = \begin{cases} 2p_{\alpha k} & \text{individual } i \text{ does not carry allele } k \\ -(1 - 2p_{\alpha k}) & \text{individual } i \text{ heterozygous for } k \\ -2(1 - p_{\alpha k}) & \text{individual } i \text{ homozygous for } k \end{cases}$$
+
+A sum-to-zero constraint $\sum_k p_{\alpha k} \cdot w_{i\alpha k} = 0$ is enforced per individual per locus, ensuring orthogonal allele effect decomposition. Each block contributes $n_\alpha - 1$ allele dimensions to the relationship matrix.
+
+**Pedigree A matrix (Henderson 1976)**
+
+Numerator relationship matrix built via Henderson's recursive tabular algorithm:
+
+$$a_{ii} = 1 + F_i, \qquad F_i = \begin{cases} \frac{1}{2}a_{s_i, d_i} & \text{both parents known} \\ 0 & \text{otherwise} \end{cases}$$
+
+$$a_{ij} = \frac{1}{2}(a_{i,\, s_j} + a_{i,\, d_j}), \quad i > j$$
+
+where $s_i$ and $d_i$ are the sire and dam indices of individual $i$, and $F_i$ is the inbreeding coefficient. The matrix is computed in a single forward pass assuming individuals are ordered such that parents precede offspring. Unknown parents contribute zero to the relationship.
+
+## Linear Model
+
+$$\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \mathbf{u} + \mathbf{e}, \quad \mathbf{u} \sim \mathcal{N}(\mathbf{0},\ \mathbf{G}\sigma^2_g), \quad \mathbf{e} \sim \mathcal{N}(\mathbf{0},\ \mathbf{I}\sigma^2_e)$$
+
+Multi-component models extend to $\mathbf{V} = \sum_k \mathbf{G}_k \sigma^2_{g_k} + \mathbf{I}\sigma^2_e$, to enable simultaneous partitioning of additive + dominance, or SNP + microhaplotype variance components.
+
+Variance components are estimated by REML; GEBV per component are solved from the mixed model equations (MME): $\hat{\mathbf{u}}_k = \mathbf{G}_k \mathbf{V}^{-1}(\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}})\,\sigma^2_{g_k}$.
+
+For binary traits (0/1), a single-step Laplace approximation is applied on the liability scale using a working response derived from the logit or probit link, with heritability transformed via the Dempster-Falconer formula.
+
+## REML Algorithms
+
+| Method | Algorithm | Best for |
+|--------|-----------|----------|
+| `"HI"` | HE-initialized AI-REML | Continuous trait, general use |
+| `"AI"` | Average Information REML (Gilmour et al. 1995) | Accurate, moderate n |
+| `"HE"` | Haseman-Elston regression (fast, one-step) | Large n, binary trait |
+| `"EM"` | EM-REML (Meyer 1989) | When AI diverges |
+| `"auto"` | AI for continuous, HE for binary | Default |
+
+## Solvers
+
+GEBV are solved via direct **Cholesky factorization** (n < 10,000) or **Preconditioned Conjugate Gradient** (n ≥ 10,000). A single Cholesky factorization of $\mathbf{V}$ is shared across REML gradient computation, BLUP solving, and EMMAX GWAS, to avoid redundant $O(n^3)$ operations.
+
+## Additional features
+
 - **Flexible solvers**: Cholesky (small n) and PCG (large n) for EBV
-- **Multi-component models**: simultaneous fitting of additive + dominance, or SNP + MH
 - **GWAS**: EMMAX-based genome-wide association study via `run_gwas()`
 - **GWABLUP**: GWAS-assisted genomic prediction via `gwablup()` (Meuwissen et al. 2024)
-- **Cross-validation**: built-in k-fold CV via `cv_masreml()`
-- **Fast Rust backend**: core linear algebra implemented in Rust for performance
 
 ---
 
@@ -46,7 +96,7 @@ cargo --version
 
 On Windows, download and run the installer from https://rustup.rs.
 
-R package dependencies: `devtools`, `MASS` (for examples).
+R package dependencies: `devtools` and `MASS`.
 
 ---
 
@@ -57,171 +107,123 @@ R package dependencies: `devtools`, `MASS` (for examples).
 devtools::install_github("bowo1698/masreml")
 ```
 
-Or from a local clone:
-
-```bash
-git clone https://github.com/bowo1698/masreml.git
-cd masreml
-```
-
-```r
-devtools::install()
-```
-
-### Remove
-
-```r
-remove.packages("masreml")
-```
-
-To fully remove including compiled artifacts:
-
-```bash
-# Remove installed package
-Rscript -e 'remove.packages("masreml")'
-
-# Remove build artifacts (from source directory)
-cd masreml/src/rust
-cargo clean
-```
-
 ---
 
-## Quick Start
+## Code examples
 
-### Continuous Trait — SNP GBLUP
+### Build Relationship Matrices
 
 ```r
 library(masreml)
 
-# Simulate data
-set.seed(42)
-n <- 500; m <- 300
-W <- matrix(sample(0:2, n * m, replace = TRUE), n, m)
-rownames(W) <- paste0("ind", 1:n)
+# SNP additive G (VanRaden 2008)
+# W: n x m integer matrix, values 0/1/2
+G_add <- build_G_snp(W)
 
-G  <- build_G_snp(W)
-u  <- MASS::mvrnorm(1, rep(0, n), G * 0.4)
-y  <- u + rnorm(n, 0, sqrt(0.6))
-names(y) <- rownames(W)
+# MH additive Agh (Da 2015)
+# mh_list: list of data.frames, one per chromosome
+# cols: ID, strand1_block1, strand2_block1, strand1_block2, ...
+A_mh <- build_G_mh(mh_list)
 
-# Fit GBLUP
-fit <- masreml(y = y, markers = list(snp_add = W))
+# SNP dominance D 
+D_dom <- build_D_snp(W)
+
+# OR Training-based allele frequencies (prevents data leakage)
+G_snp_full <- build_G_snp(W_all, ref_W = W_train)
+G_mh_full  <- build_G_mh(hap_all, ref_mh = hap_train, ids = all_ids)
+```
+
+### Model fitting
+
+```r
+# SNP additive GBLUP (continuous trait) with automatic REML algorithm selection
+fit <- masreml(y, markers = list(snp_add = G_add), method = "auto")
 summary(fit)
 
-# Accuracy
-compute_accuracy(fit$total_gebv, y, h2 = fit$varcomp$h2["snp_add"])
+# MH additive GBLUP (continuous trait)
+fit_mh <- masreml(y, markers = list(mh_add = A_mh), method = "auto")
+
+# Full effect model: SNP additive + SNP dominance + MH additive
+fit <- masreml(
+  y = y,
+  G = list(
+    snp_add = G_add,
+    snp_dom = D_dom,
+    mh_add  = A_mh
+  ),
+  method = "auto" # or AI, EM, HE, HI
+)
+
+# Binary trait (logit link, HE-REML)
+fit_bin <- masreml(y, markers = list(snp_add = G_add), trait = "binary", method = "auto")
 ```
 
-### Binary Trait
+### Inspect results
 
 ```r
-# Binary phenotype (0/1)
-liability <- u + rnorm(n, 0, sqrt(0.7))
-y_bin     <- as.integer(liability > quantile(liability, 0.6))
-names(y_bin) <- rownames(W)
+summary(fit)
 
-fit_bin <- masreml(
-  y       = y_bin,
-  markers = list(snp_add = W),
-  trait   = "binary",
-  link    = "logit"
-)
-summary(fit_bin)
-# fit_bin$binary$auc        — AUC
-# fit_bin$binary$h2_liability — h2 on liability scale
+# Variance components
+varcomp(fit)
+#   Component   Sigma2     H2 Proportion
+#     snp_add 0.412300 0.4123     0.4123
+#    residual 0.587700     NA     0.5877
+
+# GEBV
+head(fit$total_gebv)
+head(fit$gebv$snp_add)
 ```
 
-### Multi-component Model (SNP additive + dominance)
+### Predict new individuals
 
 ```r
-fit_ad <- masreml(
-  y       = y,
-  markers = list(snp_add = W, snp_dom = W),
-  method  = "AI"
-)
-summary(fit_ad)
-varcomp(fit_ad)
+# Mode A: pre-built full G matrix (n_total x n_total)
+G_full <- build_G_snp(W_all)
+pred <- predict(fit,
+  G_full    = list(snp_add = G_full),
+  train_ids = rownames(W_train),
+  test_ids  = rownames(W_test))
+
+# Mode B: raw markers for test set
+pred <- predict(fit,
+  markers_new   = list(snp_add = W_test),
+  markers_train = list(snp_add = W_train))
+
+pred$total_gebv
 ```
 
-### GWAS and GWABLUP
+### Evaluate accuracy
 
 ```r
-# Step 1: fit standard GBLUP
-fit <- masreml(y, markers = list(snp_add = W))
-
-# Step 2: run GWAS
-gwas <- run_gwas(
-  markers     = list(snp_add = W),
-  y           = y,
-  masreml_fit = fit
+acc <- compute_accuracy(
+  gebv = fit$total_gebv,
+  y    = y,
+  h2   = fit$varcomp$h2["snp_add"]
 )
-summary(gwas)
+#      r  slope   r_MG
+# 0.823  0.991  0.914
+```
 
-# Step 3: GWAS-assisted prediction
-fit_wa <- gwablup(y, markers = list(snp_add = W), gwas_result = gwas)
+### 6. GWAS and GWABLUP
+
+```r
+# EMMAX GWAS
+gwas_res <- run_gwas(
+  markers     = list(snp_add = W_train),
+  y           = y_train,
+  masreml_fit = fit,
+  ref_markers = list(snp_add = W_train)
+)
+summary(gwas_res)
+
+# GWAS-assisted prediction
+fit_wa <- gwablup(
+  y           = y_train,
+  markers     = list(snp_add = W_train),
+  gwas_result = gwas_res
+)
 summary(fit_wa)
 ```
-
-### Microhaplotype (MH) GBLUP
-
-```r
-# W_mh: W_αh matrix (Da 2015 coding) from construct_wah_matrix() in masbayes
-fit_mh <- masreml(
-  y       = y,
-  markers = list(mh_add = W_mh)
-)
-summary(fit_mh)
-```
-
-### Cross-validation
-
-```r
-cv <- cv_masreml(
-  y       = y,
-  markers = list(snp_add = W),
-  folds   = 5,
-  method  = "auto"
-)
-summary(cv)
-```
-
-### Pre-built G matrix
-
-```r
-G   <- build_G_snp(W)
-fit <- masreml(y = y, G = list(snp_add = G))
-```
-
----
-
-## Main Functions
-
-| Function | Description |
-|---|---|
-| `masreml()` | Main REML-BLUP interface |
-| `run_gwas()` | EMMAX GWAS for SNP or MH markers |
-| `gwablup()` | GWAS-assisted genomic prediction |
-| `build_G_snp()` | SNP additive G matrix (VanRaden 2008) |
-| `build_D_snp()` | SNP dominance D matrix |
-| `build_G_mh()` | MH additive G matrix (Da 2015) |
-| `build_A_ped()` | Pedigree-based A matrix |
-| `cv_masreml()` | k-fold cross-validation |
-| `compute_accuracy()` | Prediction accuracy (r, slope, r_MG) |
-| `varcomp()` | Extract variance components |
-| `summary()` | Model summary |
-
----
-
-## REML Methods
-
-| Method | Description | Recommended for |
-|---|---|---|
-| `"auto"` | AI-REML for continuous, HE for binary | Default |
-| `"HE"` | Haseman-Elston regression (fast, 1 step) | Large n, binary |
-| `"AI"` | Average Information REML (accurate) | Continuous, moderate n |
-| `"EM"` | EM-REML (stable, slow) | When AI diverges |
-| `"HI"` | HE-initialized AI-REML (fast + accurate) | Best overall for continuous |
 
 ---
 

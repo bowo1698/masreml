@@ -157,7 +157,7 @@ gwablup <- function(
     ref_mh      = ref_markers$mh_add
   )
 
-  # ── Run masreml dengan G_wa ───────────────────────────────
+  # ── Run masreml with G_wa ──────────────────────────────────
   message("Running REML-BLUP with G_wa [GWABLUP]...")
   fit_wa <- masreml(
     y         = y,

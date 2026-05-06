@@ -159,7 +159,7 @@ run_gwas <- function(
   # ── Build G_u unweighted — reuse from masreml_fit ─────────
   g_u <- .extract_g_u(masreml_fit, markers, ids, ref_markers = ref_markers)
 
-  # ── Run EMMAX di Rust ──────────────────────────────────────
+  # ── Run EMMAX in Rust ──────────────────────────────────────
   message(sprintf(
     "Running EMMAX GWAS [marker_type=%s, n=%d, pi=%.4f, window=%d]...",
     marker_type, n, pi, window
@@ -256,7 +256,7 @@ run_gwas <- function(
     }
     n_blocks <- n_cols / 2
 
-    # Re-encode per block menggunakan ref jika tersedia
+    # Re-encode per block using ref if available
     ref_mat <- if (!is.null(ref_mh) && is.matrix(ref_mh)) ref_mh else mh_list
 
     hap1_enc      <- matrix(0L, nrow = nrow(mh_list), ncol = n_blocks)
@@ -274,7 +274,7 @@ run_gwas <- function(
       n_alleles_vec[b] <- enc$n_alleles
     }
 
-    # Align IDs jika tersedia
+    # Align IDs if available
     if (!is.null(ids)) {
       rn <- rownames(mh_list)
       if (!is.null(rn)) {

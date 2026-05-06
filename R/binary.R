@@ -21,7 +21,7 @@
     stop("Binary y must have both 0 and 1 observations.")
   }
 
-  # ── Working response dari prevalence ────────────────────────
+  # ── Working response from prevalence ────────────────────────
   lf      <- .link_functions(link)
   mu_init <- rep(pmax(pmin(prevalence, 0.99), 0.01), n)
   eta_init <- lf$fun(mu_init)
@@ -29,7 +29,7 @@
   z_init   <- eta_init + (y - mu_init) / W_init
   names(z_init) <- ids
 
-  # ── Estimasi sigma2 dari working response ───────────────────
+  # ── Sigma2 estimate of working response ───────────────────
   message(sprintf(
     "Estimating variance components [method=%s, n=%d]...", method, n
   ))
@@ -48,7 +48,7 @@
     stop(sprintf("REML failed: %s", reml_init$error))
   }
 
-  # Fix sigma2_e ke nilai teoritis
+  # sigma2_e to theoretical value
   sigma2_e_fixed <- if (link == "logit") pi^2 / 3 else 1.0
   sigma2_e_reml  <- reml_init$sigma2[length(reml_init$sigma2)]
   scale_factor   <- sigma2_e_fixed / sigma2_e_reml
@@ -58,7 +58,7 @@
   sigma2_u_scaled <- pmax(pmin(sigma2_u_scaled, sigma2_u_max), 1e-4)
   sigma2_fixed    <- c(sigma2_u_scaled, sigma2_e_fixed)
 
-  # ── Solve BLUP satu kali pada working response ──────────────
+  # ── Solve BLUP once on working response ─────────────
   message("Solving BLUP on liability scale...")
 
   solver_used <- if (solver == "auto") {
@@ -76,7 +76,7 @@
   )
 
   # ── Compute fitted probabilities ─────────────────────────────
-  # eta = X*b + u (linear predictor pada liability scale)
+  # eta = X*b + u (linear predictor on liability scale)
   u_hat  <- as.numeric(blup_result$total_gebv)
   b_hat  <- as.numeric(blup_result$fixed_effects)
   eta_hat <- as.numeric(X %*% b_hat) + u_hat

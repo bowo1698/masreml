@@ -110,7 +110,7 @@ pub fn build_g_mh_add_internal(
     let n = hap1.nrows();
     let n_loci = hap1.ncols();
 
-    // Validate weights length jika provided
+    // Validate weights length if provided
     if let Some(d) = weights {
         if d.len() != n_loci {
             return Err(MatrixError::InvalidDimension(
@@ -296,9 +296,9 @@ pub fn build_g_mh_add(
     Ok(RMatrix::new_matrix(n, n, |r, c| g_vec[r * n + c]))
 }
 
-/// Build W_αh flat matrix dari hap1/hap2
+/// Build W_αh flat matrix from hap1/hap2
 /// Returns (w_mh, block_sizes)
-/// w_mh: n × total_alleles, kolom dikelompokkan per blok
+/// w_mh: n × total_alleles, columns grouped per block
 /// block_sizes: n_alleles-1 per locus
 pub fn build_w_mh_internal(
     hap1: &Array2<i32>,
@@ -310,7 +310,7 @@ pub fn build_w_mh_internal(
     let n      = hap1.nrows();
     let n_loci = hap1.ncols();
 
-    // Hitung total kolom W_αh
+    // Calculate the total column W_αh
     let block_sizes: Vec<usize> = n_alleles_per_locus.iter()
         .map(|&a| if a >= 2 { a - 1 } else { 0 })
         .collect();
@@ -371,7 +371,7 @@ pub fn build_w_mh_internal(
 
         let n_cols = w_l.ncols();
 
-        // Isi ke w_mh
+        // Fill in w_mh
         w_mh.slice_mut(ndarray::s![.., col_offset..col_offset + n_cols])
             .assign(&w_l);
         col_offset += n_cols;

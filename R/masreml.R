@@ -159,8 +159,8 @@ masreml <- function(
     max_iter   = 100L,
     tol        = 1e-6,
     n_threads  = NULL,
-    trait      = "continuous",   # "continuous" atau "binary"
-    link       = "logit"         # "logit" atau "probit" (hanya untuk binary)
+    trait      = "continuous",   # "continuous" or "binary"
+    link       = "logit"         # "logit" or "probit", binary only
 ) {
   call <- match.call()
 

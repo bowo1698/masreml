@@ -40,8 +40,8 @@ fn main() {
         }
 
         "windows" => {
-            // Windows: pakai openblas-static (compile from source)
-            // atau via vcpkg: vcpkg install openblas
+            // Windows: use openblas-static (compile from source)
+            // or via vcpkg: vcpkg install openblas
             if let Ok(vcpkg_root) = std::env::var("VCPKG_ROOT") {
                 println!(
                     "cargo:rustc-link-search=native={}/installed/x64-windows/lib",

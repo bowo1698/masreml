@@ -136,6 +136,9 @@ devtools::install_github("bowo1698/masreml")
 ```r
 library(masreml)
 
+# manual details
+?masreml
+
 # SNP additive G (VanRaden 2008)
 # W: n x m integer matrix, values 0/1/2
 G_add <- build_G_snp(W)

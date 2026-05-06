@@ -72,7 +72,9 @@ to enable simultaneous partitioning of additive + dominance, or SNP + microhaplo
 
 Variance components are estimated by REML; GEBV per component are solved from the mixed model equations (MME): 
 
-$$\hat{\mathbf{u}}_k = \mathbf{G}_k \mathbf{V}^{-1}(\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}})\,\sigma^2_{g_k}$$.
+$$
+\hat{\mathbf{u}}_k = \mathbf{G}_k \mathbf{V}^{-1} (\mathbf{y} - \mathbf{X} \hat{\boldsymbol{\beta}}) \sigma^2_{g_k}
+$$
 
 For binary traits (0/1), a single-step Laplace approximation is applied on the liability scale using a working response derived from the logit or probit link, with heritability transformed via the Dempster-Falconer formula.
 

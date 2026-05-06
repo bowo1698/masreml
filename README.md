@@ -1,4 +1,10 @@
-# masreml
+<a id="readme-top"></a>
+# MasReml
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![R](https://img.shields.io/badge/R-4.4+-blue.svg)](https://www.r-project.org/)
+[![Examples](https://img.shields.io/badge/Examples-Click%20Here-blue)](examples/)
+[![Rust][Rust]][Rust-url]
 
 **Universal REML-BLUP for SNP and Microhaplotype Genomic Prediction**
 
@@ -219,20 +225,52 @@ fit <- masreml(y = y, G = list(snp_add = G))
 
 ---
 
-## References
+## License
 
-- VanRaden PM (2008) Efficient methods to compute genomic predictions. *J. Dairy Sci.* 91:4414–4423.
-- Da Y (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction and
-  variance component estimation using SNP markers. *BMC Genet.* 16:144.
-- Johnson DL, Thompson R (1995) Restricted maximum likelihood estimation of variance components for
-  univariate animal models. *J. Dairy Sci.* 78:449–456.
-- Dempster ER, Falconer DS (1950) Interpretation of high and low liability classes in respect of
-  liability to disease. *Ann. Hum. Genet.* 31:195–203.
-- Meuwissen THE et al. (2024) GWABLUP: genome-wide association assisted BLUP. *Genet Sel Evol.* 56:17.
-- Kang HM et al. (2010) Variance component model to account for sample structure in GWAS. *Nat Genet.* 42:348–354.
+GPL-3 License - see [LICENSE](LICENSE) file
+
+Copyright (c) 2025 Agus Wibowo
 
 ---
 
-## License
+## Contact
 
-GPL-3
+- **Email**: aguswibowo1698@gmail.com
+
+---
+
+## References
+
+- VanRaden PM. Efficient methods to compute genomic predictions. [J. Dairy Sci. 91,4414–4423 (2008)](https://doi.org/10.3168/jds.2007-0980)
+
+- Da, Y. Multi-allelic haplotype model based on genetic partition for genomic prediction and variance component estimation using SNP markers. [BMC Genet. 16, 144 (2015)](https://doi.org/10.1186/s12863-015-0301-1)
+
+- Johnson DL, Thompson R. Restricted maximum likelihood estimation of variance components for univariate animal models. [J. Dairy Sci. 78, 449–456 (1995)](https://doi.org/10.3168/jds.S0022-0302(95)76654-1)
+
+- Meuwissen THE et al. (2024) GWABLUP: genome-wide association assisted best linear unbiased prediction of genetic values. [Genet Sel Evol. 56,17 (2024)](https://doi.org/10.1186/s12711-024-00881-y)
+
+- Kang HM et al. (2010) Variance component model to account for sample structure in genome-wide association studies. [Nat Genet 42, 348–354 (2010)](https://doi.org/10.1038/ng.548)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Development Team
+
+**Lead Developer:** Agus Wibowo  
+James Cook University
+
+**Supervisors:**  
+- Prof. Kyall Zenger
+- Dr. Cecile Massault
+
+---
+
+<p align="center">
+  <strong>masreml</strong> - Making reliable and faster genomic prediction🧬
+</p>
+
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[Rust]: https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white
+[Rust-url]: https://rust-lang.org/

@@ -90,6 +90,31 @@ summary.masreml <- function(object, ...) {
   )
   print(vc_df, row.names = FALSE)
 
+  # Training performance (mirror of masbayes summary's "Training fit" block)
+  if (!is.null(x$training_metrics)) {
+    m <- x$training_metrics
+    is_binary <- !is.null(x$binary)
+    header <- if (is_binary)
+      "\nTraining Performance (observed/probability scale):\n"
+    else
+      "\nTraining Performance:\n"
+    cat(header)
+    fmt <- function(v) {
+      if (is.null(v) || !is.finite(v)) "NA"
+      else formatC(v, digits = 4, format = "g")
+    }
+    if (is_binary) {
+      cat(sprintf("  %-16s: %s\n", "AUC",            fmt(m$AUC)))
+    } else {
+      cat(sprintf("  %-16s: %s\n", "accuracy (r)",   fmt(m$accuracy)))
+    }
+    cat(sprintf("  %-16s: %s\n",   "R^2",            fmt(m$R2)))
+    cat(sprintf("  %-16s: %s\n",   "RMSE",           fmt(m$RMSE)))
+    cat(sprintf("  %-16s: %s\n",   "bias (slope)",   fmt(m$bias)))
+    if (is_binary)
+      cat(sprintf("  %-16s: %s\n", "accuracy (r)",   fmt(m$accuracy)))
+  }
+
   # GEBV summary per component
   cat("\nGEBV Summary:\n")
   all_gebv <- c(x$gebv, list(total = x$total_gebv))
@@ -225,6 +250,32 @@ summary.masreml <- function(object, ...) {
   cat("\n Run summary(fit) for full report.\n")
   cat("============================================================\n\n")
   invisible(NULL)
+}
+
+#' Compute Gaussian-style training metrics: R2, RMSE, accuracy (Pearson r),
+#' and bias (regression slope of y on y_hat). Mirrors
+#' masbayes::compute_metrics_gaussian. AUC is computed separately by the
+#' binary path because it requires the observed-scale (0/1) response.
+#' @noRd
+.compute_training_metrics <- function(y, y_hat) {
+  stopifnot(length(y) == length(y_hat))
+  if (length(y) < 2L || stats::sd(y_hat) < .Machine$double.eps) {
+    return(list(
+      R2       = NA_real_,
+      RMSE     = sqrt(mean((y - y_hat)^2)),
+      accuracy = NA_real_,
+      bias     = NA_real_
+    ))
+  }
+  resid    <- y - y_hat
+  rmse     <- sqrt(mean(resid^2))
+  accuracy <- as.numeric(stats::cor(y, y_hat))
+  list(
+    R2       = accuracy^2,
+    RMSE     = rmse,
+    accuracy = accuracy,
+    bias     = as.numeric(stats::coef(stats::lm(y ~ y_hat))[2L])
+  )
 }
 
 #' @noRd

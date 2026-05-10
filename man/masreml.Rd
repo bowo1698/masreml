@@ -114,6 +114,17 @@ Object of class \code{"masreml"} with elements:
 \item \code{converged}: logical, convergence status
 \item \code{n_iter}: number of REML iterations
 \item \code{n}: number of individuals
+\item \code{runtime}: elapsed seconds for REML + BLUP
+\item \code{rds_path}: path of saved RDS file, or \code{NULL}
+when \code{save_rds = FALSE}
+\item \code{training_metrics}: list of training-set fit metrics.
+Continuous: \code{R2}, \code{RMSE}, \code{accuracy} (Pearson
+\emph{r}), \code{bias} (slope of \eqn{y \sim \hat{y}}). Binary:
+same fields plus \code{AUC}, computed on the observed
+(probability) scale (\code{y_01} vs \code{mu_hat}) so that
+\code{bias} is the \emph{calibration slope} (1.0 = perfectly
+calibrated) and \code{RMSE\^2} approximates the Brier score.
+\code{AUC} is rank-invariant under inverse-link transformation.
 \item \code{call}: matched call
 }
 For binary trait (\code{trait = "binary"}), additional

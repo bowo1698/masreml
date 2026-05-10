@@ -99,6 +99,20 @@
   h2_observed  <- .h2_liability_to_observed(h2_liability, prevalence, link)
   auc          <- .compute_auc(y, mu_hat)
 
+  # Observed-scale training metrics (y_01 vs mu_hat probability). All metrics
+  # are on the same bounded [0,1] scale so bias slope is the calibration slope
+  # (1.0 = perfect calibration), and RMSE^2 ≈ Brier score. AUC is rank-invariant
+  # so identical whether computed on liability eta_hat or probability mu_hat.
+  obs_metrics <- .compute_training_metrics(as.numeric(y), as.numeric(mu_hat))
+  training_metrics <- list(
+    R2       = obs_metrics$R2,
+    RMSE     = obs_metrics$RMSE,
+    accuracy = obs_metrics$accuracy,
+    bias     = obs_metrics$bias,    # calibration slope
+    AUC      = auc,
+    scale    = "observed (probability scale)"
+  )
+
   # ── Assemble binary slot ────────────────────────────────────
   binary_info <- list(
     link           = link,
@@ -128,20 +142,21 @@
 
   fit <- structure(
     list(
-      gebv          = gebv_list,
-      total_gebv    = total_gebv,
-      fixed_effects = b_hat,
-      varcomp       = list(sigma2 = sigma2, h2 = h2),
-      loglik        = reml_init$loglik,
-      algorithm     = paste0("Laplace-1step (", reml_init$algorithm, ")"),
-      solver        = solver_used,
-      converged     = TRUE,
-      n_iter        = 1L,
-      n             = n,
-      trait         = "binary",
-      binary        = binary_info,
-      call          = call,
-      runtime       = as.numeric(timing["elapsed"])
+      gebv             = gebv_list,
+      total_gebv       = total_gebv,
+      fixed_effects    = b_hat,
+      varcomp          = list(sigma2 = sigma2, h2 = h2),
+      loglik           = reml_init$loglik,
+      algorithm        = paste0("Laplace-1step (", reml_init$algorithm, ")"),
+      solver           = solver_used,
+      converged        = TRUE,
+      n_iter           = 1L,
+      n                = n,
+      trait            = "binary",
+      binary           = binary_info,
+      training_metrics = training_metrics,
+      call             = call,
+      runtime          = as.numeric(timing["elapsed"])
     ),
     class = "masreml"
   )

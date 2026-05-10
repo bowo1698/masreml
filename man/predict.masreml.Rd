@@ -11,6 +11,8 @@
   markers_train = NULL,
   train_ids = NULL,
   test_ids = NULL,
+  y_new = NULL,
+  X_new = NULL,
   link = NULL,
   jitter = 1e-06,
   ...
@@ -50,6 +52,17 @@ same order as used when fitting \code{object}. Required when using
 \code{G_full} mode. Inferred from \code{markers_new} row names if
 not provided.}
 
+\item{y_new}{optional numeric vector of observed phenotypes for test
+individuals. When supplied, prediction metrics (R2, RMSE, accuracy
+or AUC, bias) are computed automatically and stored in
+\code{$metrics}. For binary, metrics are on the observed
+(probability) scale so \code{bias} is the calibration slope.
+Length must match the number of test individuals.}
+
+\item{X_new}{optional numeric matrix of fixed-effects design for test
+individuals (n_test x c). Required only if the original fit used
+non-intercept fixed effects. Defaults to an intercept column of 1s.}
+
 \item{link}{character, link function for binary trait prediction:
 \code{"logit"} (default) or \code{"probit"}. Inherited from
 \code{object$binary$link} if available.}
@@ -60,17 +73,29 @@ not provided.}
 \item{...}{ignored}
 }
 \value{
-list of class \code{"masreml_pred"} with elements:
+list of class \code{"masreml_pred"}. Field names are aligned
+with \code{masbayes::predict.masbayes_*()} for cross-package
+workflows. Backward-compatibility aliases (\code{total_gebv},
+\code{fitted}) are retained.
 \itemize{
-\item \code{total_gebv}: named numeric vector of total GEBV
-for test individuals (sum across components)
-\item \code{gebv}: named list of per-component GEBV vectors
-\item \code{fitted}: fitted probabilities P(y=1) for binary trait,
-NULL for continuous
-\item \code{train_ids}: character vector of training IDs used
-\item \code{test_ids}: character vector of test IDs predicted
-\item \code{n_train}: number of training individuals
-\item \code{n_test}: number of test individuals
+\item \code{GEBV}: named numeric vector of total GEBV for test
+individuals (sum across components). Liability scale for binary.
+\item \code{total_gebv}: alias for \code{GEBV} (back-compat).
+\item \code{gebv}: named list of per-component GEBV vectors.
+\item \code{prob}: fitted probabilities \code{P(y=1)} for binary
+trait via inverse-link, \code{NULL} for continuous.
+\item \code{fitted}: alias for \code{prob} (back-compat).
+\item \code{metrics}: list of test-set metrics if \code{y_new}
+supplied (R2, RMSE, accuracy/AUC, bias), else \code{NULL}.
+\item \code{h2, sigma2}: heritability and variance components
+carried over from the fit.
+\item \code{response_type}: \code{"continuous"} or \code{"binary"}.
+\item \code{algorithm}: REML algorithm from the fit.
+\item \code{eval_scope}: \code{"in-sample (training)"},
+\code{"test set (G_full)"}, or \code{"test set (markers_new)"}.
+\item \code{has_truth}: \code{TRUE} if metrics were computed.
+\item \code{train_ids, test_ids}: ID vectors.
+\item \code{n_train, n_test}: sample sizes.
 }
 }
 \description{
@@ -94,25 +119,35 @@ to \eqn{\eta_{test} = \mu_{fixed} + \hat{u}_{test}}.
 }
 \examples{
 \dontrun{
-# ── Mode A: G_full pre-built ──────────────────────────────
-G_full <- build_G_snp(W_all)   # n_total x n_total
+# ── In-sample mode: shortcut to training metrics ──────────
+fit  <- masreml(y_train, markers = list(snp_add = W_train))
+pred <- predict(fit)               # no test data → returns training info
+pred$metrics                       # = fit$training_metrics
+
+# ── Mode A: G_full pre-built, with auto-metrics ───────────
+G_full <- build_G_snp(W_all)       # n_total x n_total
 fit    <- masreml(y_train, G = list(snp_add = G_train))
 
 pred <- predict(fit,
-  G_full     = list(snp_add = G_full),
-  train_ids  = rownames(W_train),
-  test_ids   = rownames(W_test))
+  G_full    = list(snp_add = G_full),
+  train_ids = rownames(W_train),
+  test_ids  = rownames(W_test),
+  y_new     = y_test)              # auto-compute test metrics
+pred$GEBV
+pred$metrics$accuracy
 
-cor(pred$total_gebv, tbv_test)   # accuracy
-
-# ── Mode B: markers_new ───────────────────────────────────
+# ── Mode B: markers_new + auto-metrics ────────────────────
 fit  <- masreml(y_train, markers = list(snp_add = W_train))
-
 pred <- predict(fit,
   markers_new   = list(snp_add = W_test),
-  markers_train = list(snp_add = W_train))
+  markers_train = list(snp_add = W_train),
+  y_new         = y_test)
+pred$metrics$bias                  # calibration slope (binary) / dispersion
 
-cor(pred$total_gebv, tbv_test)
+# ── Forecast only (no y_new) ──────────────────────────────
+fc <- predict(fit, markers_new = list(snp_add = W_test),
+                   markers_train = list(snp_add = W_train))
+fc$GEBV                            # metrics is NULL
 }
 
 }

@@ -31,6 +31,15 @@
 #' @param test_ids character vector of test individual IDs. Required for
 #'   \code{G_full} mode. Inferred from \code{markers_new} row names if
 #'   not provided.
+#' @param y_new optional numeric vector of observed phenotypes for test
+#'   individuals. When supplied, prediction metrics (R2, RMSE, accuracy
+#'   or AUC, bias) are computed automatically and stored in
+#'   \code{$metrics}. For binary, metrics are on the observed
+#'   (probability) scale so \code{bias} is the calibration slope.
+#'   Length must match the number of test individuals.
+#' @param X_new optional numeric matrix of fixed-effects design for test
+#'   individuals (n_test x c). Required only if the original fit used
+#'   non-intercept fixed effects. Defaults to an intercept column of 1s.
 #' @param link character, link function for binary trait prediction:
 #'   \code{"logit"} (default) or \code{"probit"}. Inherited from
 #'   \code{object$binary$link} if available.
@@ -38,17 +47,29 @@
 #'   \code{G[train,train]} for numerical stability (default 1e-6).
 #' @param ... ignored
 #'
-#' @return list of class \code{"masreml_pred"} with elements:
+#' @return list of class \code{"masreml_pred"}. Field names are aligned
+#'   with \code{masbayes::predict.masbayes_*()} for cross-package
+#'   workflows. Backward-compatibility aliases (\code{total_gebv},
+#'   \code{fitted}) are retained.
 #'   \itemize{
-#'     \item \code{total_gebv}: named numeric vector of total GEBV
-#'       for test individuals (sum across components)
-#'     \item \code{gebv}: named list of per-component GEBV vectors
-#'     \item \code{fitted}: fitted probabilities P(y=1) for binary trait,
-#'       NULL for continuous
-#'     \item \code{train_ids}: character vector of training IDs used
-#'     \item \code{test_ids}: character vector of test IDs predicted
-#'     \item \code{n_train}: number of training individuals
-#'     \item \code{n_test}: number of test individuals
+#'     \item \code{GEBV}: named numeric vector of total GEBV for test
+#'       individuals (sum across components). Liability scale for binary.
+#'     \item \code{total_gebv}: alias for \code{GEBV} (back-compat).
+#'     \item \code{gebv}: named list of per-component GEBV vectors.
+#'     \item \code{prob}: fitted probabilities \code{P(y=1)} for binary
+#'       trait via inverse-link, \code{NULL} for continuous.
+#'     \item \code{fitted}: alias for \code{prob} (back-compat).
+#'     \item \code{metrics}: list of test-set metrics if \code{y_new}
+#'       supplied (R2, RMSE, accuracy/AUC, bias), else \code{NULL}.
+#'     \item \code{h2, sigma2}: heritability and variance components
+#'       carried over from the fit.
+#'     \item \code{response_type}: \code{"continuous"} or \code{"binary"}.
+#'     \item \code{algorithm}: REML algorithm from the fit.
+#'     \item \code{eval_scope}: \code{"in-sample (training)"},
+#'       \code{"test set (G_full)"}, or \code{"test set (markers_new)"}.
+#'     \item \code{has_truth}: \code{TRUE} if metrics were computed.
+#'     \item \code{train_ids, test_ids}: ID vectors.
+#'     \item \code{n_train, n_test}: sample sizes.
 #'   }
 #'
 #' @details
@@ -70,25 +91,35 @@
 #'
 #' @examples
 #' \dontrun{
-#' # ── Mode A: G_full pre-built ──────────────────────────────
-#' G_full <- build_G_snp(W_all)   # n_total x n_total
+#' # ── In-sample mode: shortcut to training metrics ──────────
+#' fit  <- masreml(y_train, markers = list(snp_add = W_train))
+#' pred <- predict(fit)               # no test data → returns training info
+#' pred$metrics                       # = fit$training_metrics
+#'
+#' # ── Mode A: G_full pre-built, with auto-metrics ───────────
+#' G_full <- build_G_snp(W_all)       # n_total x n_total
 #' fit    <- masreml(y_train, G = list(snp_add = G_train))
 #'
 #' pred <- predict(fit,
-#'   G_full     = list(snp_add = G_full),
-#'   train_ids  = rownames(W_train),
-#'   test_ids   = rownames(W_test))
+#'   G_full    = list(snp_add = G_full),
+#'   train_ids = rownames(W_train),
+#'   test_ids  = rownames(W_test),
+#'   y_new     = y_test)              # auto-compute test metrics
+#' pred$GEBV
+#' pred$metrics$accuracy
 #'
-#' cor(pred$total_gebv, tbv_test)   # accuracy
-#'
-#' # ── Mode B: markers_new ───────────────────────────────────
+#' # ── Mode B: markers_new + auto-metrics ────────────────────
 #' fit  <- masreml(y_train, markers = list(snp_add = W_train))
-#'
 #' pred <- predict(fit,
 #'   markers_new   = list(snp_add = W_test),
-#'   markers_train = list(snp_add = W_train))
+#'   markers_train = list(snp_add = W_train),
+#'   y_new         = y_test)
+#' pred$metrics$bias                  # calibration slope (binary) / dispersion
 #'
-#' cor(pred$total_gebv, tbv_test)
+#' # ── Forecast only (no y_new) ──────────────────────────────
+#' fc <- predict(fit, markers_new = list(snp_add = W_test),
+#'                    markers_train = list(snp_add = W_train))
+#' fc$GEBV                            # metrics is NULL
 #' }
 #'
 #' @export
@@ -99,6 +130,8 @@ predict.masreml <- function(
     markers_train = NULL,
     train_ids     = NULL,
     test_ids      = NULL,
+    y_new         = NULL,
+    X_new         = NULL,
     link          = NULL,
     jitter        = 1e-6,
     ...
@@ -109,7 +142,8 @@ predict.masreml <- function(
   }
   link <- match.arg(link, c("logit", "probit"))
 
-  is_binary <- !is.null(object$binary)
+  is_binary     <- !is.null(object$binary)
+  response_type <- if (is_binary) "binary" else "continuous"
 
   # ── Extract training info from fitted object ──────────────
   u_train_list  <- object$gebv             # named list per component
@@ -123,15 +157,43 @@ predict.masreml <- function(
   # ── Determine mode ────────────────────────────────────────
   use_G_full      <- !is.null(G_full)
   use_markers_new <- !is.null(markers_new)
+  in_sample       <- !use_G_full && !use_markers_new
 
-  if (!use_G_full && !use_markers_new) {
-    stop("Provide either 'G_full' or 'markers_new' + 'markers_train'.")
-  }
   if (use_G_full && use_markers_new) {
     stop("Provide only one of 'G_full' or 'markers_new', not both.")
   }
   if (use_markers_new && is.null(markers_train)) {
     stop("'markers_train' is required when using 'markers_new' mode.")
+  }
+
+  # ── In-sample mode: return training info (parallels masbayes) ──
+  if (in_sample) {
+    if (!is.null(y_new)) {
+      warning("'y_new' ignored in in-sample mode; using fit$training_metrics.")
+    }
+    train_ids <- names(object$total_gebv)
+    if (is.null(train_ids)) train_ids <- paste0("ind", seq_len(object$n))
+    return(structure(
+      list(
+        GEBV          = object$total_gebv,
+        total_gebv    = object$total_gebv,
+        gebv          = object$gebv,
+        prob          = if (is_binary) object$binary$fitted else NULL,
+        fitted        = if (is_binary) object$binary$fitted else NULL,
+        metrics       = object$training_metrics,
+        h2            = object$varcomp$h2,
+        sigma2        = object$varcomp$sigma2,
+        response_type = response_type,
+        algorithm     = object$algorithm,
+        eval_scope    = "in-sample (training)",
+        has_truth     = !is.null(object$training_metrics),
+        train_ids     = train_ids,
+        test_ids      = train_ids,
+        n_train       = object$n,
+        n_test        = object$n
+      ),
+      class = "masreml_pred"
+    ))
   }
 
   # ── Validate train_ids ────────────────────────────────────
@@ -236,15 +298,57 @@ predict.masreml <- function(
     names(fitted_prob) <- test_ids
   }
 
+  # ── Auto-compute test-set metrics if y_new supplied ──────
+  metrics    <- NULL
+  eval_scope <- if (use_G_full) "test set (G_full)"
+                else            "test set (markers_new)"
+
+  if (!is.null(y_new)) {
+    if (length(y_new) != length(total_gebv_test)) {
+      stop(sprintf(
+        "length(y_new) = %d does not match number of test individuals = %d",
+        length(y_new), length(total_gebv_test)
+      ))
+    }
+    # Use first random component's h2 if available; multi-component models
+    # need explicit h2 from the user via evaluate_prediction() helper.
+    h2_for_rmg <- if (length(object$varcomp$h2) >= 1L)
+      sum(object$varcomp$h2) else NA_real_
+    ev_df <- evaluate_prediction(
+      gebv        = total_gebv_test,
+      y           = as.numeric(y_new),
+      h2          = h2_for_rmg,
+      tbv         = NULL,
+      fitted_prob = fitted_prob
+    )
+    metrics <- list(
+      R2       = if (!is.na(ev_df$r_test_y)) ev_df$r_test_y^2 else NA_real_,
+      RMSE     = ev_df$RMSE,
+      accuracy = ev_df$r_test_y,
+      bias     = ev_df$bias,
+      AUC      = ev_df$AUC,
+      r_MG     = ev_df$r_MG
+    )
+  }
+
   structure(
     list(
-      total_gebv = total_gebv_test,
-      gebv       = gebv_test_list,
-      fitted     = fitted_prob,
-      train_ids  = train_ids,
-      test_ids   = test_ids,
-      n_train    = length(train_ids),
-      n_test     = length(test_ids)
+      GEBV          = total_gebv_test,
+      total_gebv    = total_gebv_test,    # alias (back-compat)
+      gebv          = gebv_test_list,
+      prob          = fitted_prob,
+      fitted        = fitted_prob,        # alias (back-compat)
+      metrics       = metrics,
+      h2            = object$varcomp$h2,
+      sigma2        = object$varcomp$sigma2,
+      response_type = response_type,
+      algorithm     = object$algorithm,
+      eval_scope    = eval_scope,
+      has_truth     = !is.null(metrics),
+      train_ids     = train_ids,
+      test_ids      = test_ids,
+      n_train       = length(train_ids),
+      n_test        = length(test_ids)
     ),
     class = "masreml_pred"
   )
@@ -270,12 +374,24 @@ predict.masreml <- function(
 #'
 #' @return data.frame with columns:
 #'   \itemize{
-#'     \item \code{r_test_y}: cor(gebv, y) — predictive ability
-#'     \item \code{r_test_g}: cor(gebv, tbv) — accuracy vs true BV, NA if tbv NULL
-#'     \item \code{bias}: regression slope lm(y ~ gebv), expect 1 = unbiased
-#'     \item \code{r_MG}: r_test_y / sqrt(h2), NA if h2 NULL
-#'     \item \code{AUC}: area under ROC curve, NA if fitted_prob NULL
-#'     \item \code{RMSE}: sqrt(mean((gebv - y)^2))
+#'     \item \code{r_test_y}: predictive ability. Continuous: \code{cor(gebv, y)}.
+#'       Binary: \code{cor(fitted_prob, y)} on the observed (probability) scale.
+#'     \item \code{r_test_g}: \code{cor(gebv, tbv)} — accuracy vs true BV
+#'       on the genetic-value scale (uses \code{gebv} for both continuous
+#'       and binary). NA if \code{tbv} NULL.
+#'     \item \code{bias}: regression slope. Continuous: \code{lm(y ~ gebv)};
+#'       binary: \code{lm(y ~ fitted_prob)} = \emph{calibration slope}.
+#'       Both interpret 1.0 = unbiased / well-calibrated, <1 over-dispersion,
+#'       >1 under-dispersion.
+#'     \item \code{r_MG}: \code{cor(gebv, y) / sqrt(h2)} — heritability-adjusted
+#'       accuracy on the GEBV scale (uses \code{gebv} not \code{fitted_prob}
+#'       even for binary, so \code{h2} is on the same scale). NA if \code{h2}
+#'       NULL.
+#'     \item \code{AUC}: area under ROC curve, computed from \code{fitted_prob}.
+#'       Rank-invariant so unaffected by inverse-link transformation. NA if
+#'       \code{fitted_prob} NULL.
+#'     \item \code{RMSE}: continuous: \code{sqrt(mean((gebv - y)^2))}; binary:
+#'       \code{sqrt(mean((fitted_prob - y)^2))} \eqn{\approx} \code{sqrt(Brier)}.
 #'   }
 #'
 #' @seealso \code{\link{predict.masreml}}, \code{\link{compute_accuracy}}
@@ -315,23 +431,39 @@ evaluate_prediction <- function(gebv, y, h2 = NULL, tbv = NULL,
     stop("'fitted_prob' must have same length as 'gebv'.")
   }
 
-  r_test_y <- cor(gebv, y, use = "complete.obs")
+  is_binary <- !is.null(fitted_prob)
+
+  # For binary, score on the observed (probability) scale: r/bias/RMSE use
+  # fitted_prob (= P(y=1)) so bias is the calibration slope and RMSE^2 is
+  # the Brier score. r_test_g (vs TBV) and r_MG remain on the GEBV scale
+  # because TBV and h2 are defined at the genetic-value level.
+  y_pred_obs <- if (is_binary) fitted_prob else gebv
+
+  r_test_y <- cor(y_pred_obs, y, use = "complete.obs")
   r_test_g <- if (!is.null(tbv)) cor(gebv, tbv, use = "complete.obs") else NA_real_
-  bias     <- tryCatch(coef(lm(y ~ gebv))[2], error = function(e) NA_real_)
-  r_MG     <- if (!is.null(h2) && !is.na(h2) && h2 > 0)
-                r_test_y / sqrt(h2)
-              else NA_real_
-  auc      <- if (!is.null(fitted_prob)) {
-              tryCatch({
-                n1 <- sum(y == 1); n0 <- sum(y == 0)
-                if (n1 == 0 || n0 == 0) NA_real_
-                else {
-                  s1 <- fitted_prob[y == 1]; s0 <- fitted_prob[y == 0]
-                  mean(outer(s1, s0, ">")) + 0.5 * mean(outer(s1, s0, "=="))
-                }
-              }, error = function(e) NA_real_)
-            } else NA_real_
-  rmse     <- sqrt(mean((gebv - y)^2, na.rm = TRUE))
+  bias     <- tryCatch(coef(lm(y ~ y_pred_obs))[2], error = function(e) NA_real_)
+  r_MG     <- if (!is.null(h2) && !is.na(h2) && h2 > 0) {
+    r_y_for_rmg <- if (is_binary) cor(gebv, y, use = "complete.obs") else r_test_y
+    r_y_for_rmg / sqrt(h2)
+  } else {
+    NA_real_
+  }
+  auc      <- if (is_binary) {
+    tryCatch({
+      n1 <- sum(y == 1)
+      n0 <- sum(y == 0)
+      if (n1 == 0 || n0 == 0) {
+        NA_real_
+      } else {
+        s1 <- fitted_prob[y == 1]
+        s0 <- fitted_prob[y == 0]
+        mean(outer(s1, s0, ">")) + 0.5 * mean(outer(s1, s0, "=="))
+      }
+    }, error = function(e) NA_real_)
+  } else {
+    NA_real_
+  }
+  rmse     <- sqrt(mean((y_pred_obs - y)^2, na.rm = TRUE))
 
   data.frame(
     r_test_y = round(r_test_y, 4),
@@ -591,20 +723,58 @@ evaluate_prediction <- function(gebv, y, h2 = NULL, tbv = NULL,
 #' Print method for masreml_pred
 #' @export
 print.masreml_pred <- function(x, ...) {
+  is_binary <- identical(x$response_type, "binary")
+
+  fmt <- function(v) {
+    if (is.null(v) || !is.finite(v)) "NA"
+    else formatC(v, digits = 4, format = "g")
+  }
+
   cat("\n── masreml Prediction ────────────────────────────────\n")
-  cat(sprintf("  n_train   : %d\n", x$n_train))
-  cat(sprintf("  n_test    : %d\n", x$n_test))
-  cat(sprintf("  Components: %s\n", paste(names(x$gebv), collapse = ", ")))
-  g <- x$total_gebv
+  if (!is.null(x$algorithm))
+    cat(sprintf("  Algorithm   : %s\n", x$algorithm))
+  if (!is.null(x$response_type))
+    cat(sprintf("  Response    : %s\n", x$response_type))
+  if (!is.null(x$eval_scope))
+    cat(sprintf("  Evaluation  : %s\n", x$eval_scope))
+  cat(sprintf("  n_train     : %d\n", x$n_train))
+  cat(sprintf("  n_test      : %d\n", x$n_test))
+  cat(sprintf("  Components  : %s\n", paste(names(x$gebv), collapse = ", ")))
+
+  g <- x$GEBV
+  if (is.null(g)) g <- x$total_gebv  # back-compat fallback
   cat(sprintf(
-    "  GEBV range: [%.4f, %.4f]  mean=%.4f  sd=%.4f\n",
-    min(g), max(g), mean(g), sd(g)
+    "  GEBV (n=%d) : min=%.4f  median=%.4f  max=%.4f  sd=%.4f\n",
+    length(g), min(g), stats::median(g), max(g), sd(g)
   ))
-  if (!is.null(x$fitted)) {
+
+  prob <- x$prob
+  if (is.null(prob)) prob <- x$fitted
+  if (!is.null(prob)) {
     cat(sprintf(
-      "  Fitted P() : [%.4f, %.4f]  mean=%.4f\n",
-      min(x$fitted), max(x$fitted), mean(x$fitted)
+      "  Prob (P=1)  : min=%.4f  median=%.4f  max=%.4f\n",
+      min(prob), stats::median(prob), max(prob)
     ))
+  }
+
+  if (!is.null(x$metrics)) {
+    m <- x$metrics
+    cat(if (is_binary)
+          "  Metrics (observed/probability scale)\n"
+        else
+          "  Metrics\n")
+    if (is_binary) {
+      cat(sprintf("    AUC          : %s\n", fmt(m$AUC)))
+    } else {
+      cat(sprintf("    accuracy (r) : %s\n", fmt(m$accuracy)))
+    }
+    cat(sprintf("    R^2          : %s\n", fmt(m$R2)))
+    cat(sprintf("    RMSE         : %s\n", fmt(m$RMSE)))
+    cat(sprintf("    bias (slope) : %s\n", fmt(m$bias)))
+    if (!is.null(m$r_MG) && !is.na(m$r_MG))
+      cat(sprintf("    r_MG (h2-adj): %s\n", fmt(m$r_MG)))
+  } else {
+    cat("  (no y_new supplied — metrics not computed)\n")
   }
   cat("──────────────────────────────────────────────────────\n\n")
   invisible(x)

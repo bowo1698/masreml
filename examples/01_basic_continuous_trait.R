@@ -98,10 +98,10 @@ pred_a <- predict(
 )
 
 eval_a <- evaluate_prediction(
-  gebv = pred_a$total_gebv,
+  gebv = pred_a$GEBV,
   y    = y_test,
   h2   = h2_a,
-  tbv  = g_true[names(pred_a$total_gebv)]
+  tbv  = g_true[names(pred_a$GEBV)]
 )
 cat("Test-set evaluation (Mode A):\n")
 print(eval_a)
@@ -146,10 +146,10 @@ pred_b <- predict(
 )
 
 eval_b <- evaluate_prediction(
-  gebv = pred_b$total_gebv,
+  gebv = pred_b$GEBV,
   y    = y_test,
   h2   = h2_b,
-  tbv  = g_true[names(pred_b$total_gebv)]
+  tbv  = g_true[names(pred_b$GEBV)]
 )
 cat("Test-set evaluation (Mode B):\n")
 print(eval_b)
@@ -177,24 +177,24 @@ cat(sprintf("Simulated h2: %.4f\n", h2_sim))
 par(mfrow = c(1, 2))
 
 plot(
-  pred_a$total_gebv, y_test,
+  pred_a$GEBV, y_test,
   main = sprintf("Mode A: GEBV vs Phenotype (r=%.3f)", eval_a$r_test_y),
   xlab = "GEBV", ylab = "Phenotype",
   pch = 16, col = rgb(0.2, 0.4, 0.8, 0.5)
 )
-abline(lm(y_test ~ pred_a$total_gebv), col = "red", lwd = 2)
+abline(lm(y_test ~ pred_a$GEBV), col = "red", lwd = 2)
 abline(0, 1, col = "grey50", lty = 2)
 legend("topleft", legend = c("Regression", "1:1 line"),
        col = c("red", "grey50"), lty = c(1, 2), lwd = c(2, 1),
        bty = "n", cex = 0.8)
 
 plot(
-  pred_b$total_gebv, y_test,
+  pred_b$GEBV, y_test,
   main = sprintf("Mode B: GEBV vs Phenotype (r=%.3f)", eval_b$r_test_y),
   xlab = "GEBV", ylab = "Phenotype",
   pch = 16, col = rgb(0.8, 0.3, 0.2, 0.5)
 )
-abline(lm(y_test ~ pred_b$total_gebv), col = "red", lwd = 2)
+abline(lm(y_test ~ pred_b$GEBV), col = "red", lwd = 2)
 abline(0, 1, col = "grey50", lty = 2)
 legend("topleft", legend = c("Regression", "1:1 line"),
        col = c("red", "grey50"), lty = c(1, 2), lwd = c(2, 1),

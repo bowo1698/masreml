@@ -26,12 +26,24 @@ If NULL, AUC is returned as NA.}
 \value{
 data.frame with columns:
 \itemize{
-\item \code{r_test_y}: cor(gebv, y) — predictive ability
-\item \code{r_test_g}: cor(gebv, tbv) — accuracy vs true BV, NA if tbv NULL
-\item \code{bias}: regression slope lm(y ~ gebv), expect 1 = unbiased
-\item \code{r_MG}: r_test_y / sqrt(h2), NA if h2 NULL
-\item \code{AUC}: area under ROC curve, NA if fitted_prob NULL
-\item \code{RMSE}: sqrt(mean((gebv - y)^2))
+\item \code{r_test_y}: predictive ability. Continuous: \code{cor(gebv, y)}.
+Binary: \code{cor(fitted_prob, y)} on the observed (probability) scale.
+\item \code{r_test_g}: \code{cor(gebv, tbv)} — accuracy vs true BV
+on the genetic-value scale (uses \code{gebv} for both continuous
+and binary). NA if \code{tbv} NULL.
+\item \code{bias}: regression slope. Continuous: \code{lm(y ~ gebv)};
+binary: \code{lm(y ~ fitted_prob)} = \emph{calibration slope}.
+Both interpret 1.0 = unbiased / well-calibrated, <1 over-dispersion,
+>1 under-dispersion.
+\item \code{r_MG}: \code{cor(gebv, y) / sqrt(h2)} — heritability-adjusted
+accuracy on the GEBV scale (uses \code{gebv} not \code{fitted_prob}
+even for binary, so \code{h2} is on the same scale). NA if \code{h2}
+NULL.
+\item \code{AUC}: area under ROC curve, computed from \code{fitted_prob}.
+Rank-invariant so unaffected by inverse-link transformation. NA if
+\code{fitted_prob} NULL.
+\item \code{RMSE}: continuous: \code{sqrt(mean((gebv - y)^2))}; binary:
+\code{sqrt(mean((fitted_prob - y)^2))} \eqn{\approx} \code{sqrt(Brier)}.
 }
 }
 \description{

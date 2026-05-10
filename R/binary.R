@@ -7,7 +7,10 @@
 .masreml_binary <- function(
     y, X, g_list, link,
     method, solver, max_iter, tol, n_threads,
-    ids, call
+    ids, call,
+    verbose   = TRUE,
+    save_rds  = FALSE,
+    save_path = NULL
 ) {
   n <- length(y)
 
@@ -34,46 +37,48 @@
     "Estimating variance components [method=%s, n=%d]...", method, n
   ))
 
-  reml_init <- .run_reml(
-    y         = z_init,
-    X         = X,
-    g_list    = g_list,
-    method    = method,
-    max_iter  = max_iter,
-    tol       = tol,
-    n_threads = n_threads
-  )
-
-  if (!is.null(reml_init$error) && !is.na(reml_init$error)) {
-    stop(sprintf("REML failed: %s", reml_init$error))
-  }
-
-  # sigma2_e to theoretical value
-  sigma2_e_fixed <- if (link == "logit") pi^2 / 3 else 1.0
-  sigma2_e_reml  <- reml_init$sigma2[length(reml_init$sigma2)]
-  scale_factor   <- sigma2_e_fixed / sigma2_e_reml
-  sigma2_u_reml  <- reml_init$sigma2[seq_len(length(g_list))]
-  sigma2_u_scaled <- sigma2_u_reml * scale_factor
-  sigma2_u_max    <- var(z_init) - sigma2_e_fixed  # max possible sigma2_u
-  sigma2_u_scaled <- pmax(pmin(sigma2_u_scaled, sigma2_u_max), 1e-4)
-  sigma2_fixed    <- c(sigma2_u_scaled, sigma2_e_fixed)
-
-  # ── Solve BLUP once on working response ─────────────
-  message("Solving BLUP on liability scale...")
-
   solver_used <- if (solver == "auto") {
     if (n < 10000L) "cholesky" else "pcg"
   } else solver
 
-  blup_result <- .solve_blup(
-    y        = z_init,
-    X        = X,
-    g_list   = g_list,
-    sigma2   = sigma2_fixed,
-    solver   = solver_used,
-    max_iter = max_iter,
-    tol      = tol
-  )
+  timing <- system.time({
+    reml_init <- .run_reml(
+      y         = z_init,
+      X         = X,
+      g_list    = g_list,
+      method    = method,
+      max_iter  = max_iter,
+      tol       = tol,
+      n_threads = n_threads
+    )
+
+    if (!is.null(reml_init$error) && !is.na(reml_init$error)) {
+      stop(sprintf("REML failed: %s", reml_init$error))
+    }
+
+    # sigma2_e to theoretical value
+    sigma2_e_fixed <- if (link == "logit") pi^2 / 3 else 1.0
+    sigma2_e_reml  <- reml_init$sigma2[length(reml_init$sigma2)]
+    scale_factor   <- sigma2_e_fixed / sigma2_e_reml
+    sigma2_u_reml  <- reml_init$sigma2[seq_len(length(g_list))]
+    sigma2_u_scaled <- sigma2_u_reml * scale_factor
+    sigma2_u_max    <- var(z_init) - sigma2_e_fixed  # max possible sigma2_u
+    sigma2_u_scaled <- pmax(pmin(sigma2_u_scaled, sigma2_u_max), 1e-4)
+    sigma2_fixed    <- c(sigma2_u_scaled, sigma2_e_fixed)
+
+    # ── Solve BLUP once on working response ─────────────
+    message("Solving BLUP on liability scale...")
+
+    blup_result <- .solve_blup(
+      y        = z_init,
+      X        = X,
+      g_list   = g_list,
+      sigma2   = sigma2_fixed,
+      solver   = solver_used,
+      max_iter = max_iter,
+      tol      = tol
+    )
+  })
 
   # ── Compute fitted probabilities ─────────────────────────────
   # eta = X*b + u (linear predictor on liability scale)
@@ -121,7 +126,7 @@
   total_gebv <- u_hat
   if (!is.null(ids)) names(total_gebv) <- ids
 
-  structure(
+  fit <- structure(
     list(
       gebv          = gebv_list,
       total_gebv    = total_gebv,
@@ -135,8 +140,15 @@
       n             = n,
       trait         = "binary",
       binary        = binary_info,
-      call          = call
+      call          = call,
+      runtime       = as.numeric(timing["elapsed"])
     ),
     class = "masreml"
   )
+
+  fit$rds_path <- .maybe_save_rds_masreml(fit, save_rds, save_path)
+
+  if (isTRUE(verbose)) .print_run_summary(fit)
+
+  fit
 }

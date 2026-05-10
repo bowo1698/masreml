@@ -58,6 +58,31 @@
 #'     \item \code{"logit"} (default): logistic link, sigma2_e = pi^2/3
 #'     \item \code{"probit"}: probit link, sigma2_e = 1
 #'   }
+#' @param verbose logical, if \code{TRUE} (default) prints a brief
+#'   post-fit summary banner (algorithm, runtime, convergence, variance
+#'   components, h2, GEBV summary) when \code{masreml()} returns. The
+#'   existing progress messages (\code{"Building..."}, \code{"Running
+#'   REML..."}, \code{"Solving EBV..."}) are unaffected by this flag.
+#' @param save_rds logical, if \code{TRUE} the fit is also written to
+#'   disk as an RDS file. Default \code{FALSE} \emph{(differs from
+#'   \code{masbayes::run_bayesr()})} because \code{masreml()} is often
+#'   called inside \code{\link{cv_masreml}} loops where auto-saving
+#'   would clobber per-fold output. Set to \code{TRUE} for one-off
+#'   full-data fits you want to persist.
+#' @param save_path optional explicit RDS path. If \code{NULL} (default),
+#'   defaults to \code{"results_masreml.Rds"} in the current working
+#'   directory. Ignored unless \code{save_rds = TRUE}.
+#'
+#' @details
+#' \strong{Auto-summary.} On completion, \code{masreml()} prints a brief
+#' banner mirroring \code{masbayes::run_bayesr()}/
+#' \code{masbayes::run_bayesa()}. Set \code{verbose = FALSE} to suppress.
+#' The full \code{\link{summary.masreml}} method is unchanged and is
+#' still the canonical detailed report.
+#'
+#' \strong{Runtime field.} The returned object now contains a
+#' \code{runtime} field (elapsed seconds for REML + BLUP), populated
+#' even when \code{verbose = FALSE}.
 #'
 #' @return Object of class \code{"masreml"} with elements:
 #'   \itemize{
@@ -160,7 +185,10 @@ masreml <- function(
     tol        = 1e-6,
     n_threads  = NULL,
     trait      = "continuous",   # "continuous" or "binary"
-    link       = "logit"         # "logit" or "probit", binary only
+    link       = "logit",        # "logit" or "probit", binary only
+    verbose    = TRUE,
+    save_rds   = FALSE,
+    save_path  = NULL
 ) {
   call <- match.call()
 
@@ -201,7 +229,10 @@ masreml <- function(
       tol       = tol,
       n_threads = n_threads,
       ids       = ids,
-      call      = call
+      call      = call,
+      verbose   = verbose,
+      save_rds  = save_rds,
+      save_path = save_path
     ))
   }
 
@@ -212,42 +243,41 @@ masreml <- function(
     solver
   }
 
-  # ── Run REML ────────────────────────────────────────────────
+  # ── Run REML + BLUP (timed) ─────────────────────────────────
   message(sprintf(
     "Running REML [method=%s, n=%d, n_components=%d]...",
     method, n, length(g_list)
   ))
 
-  reml_result <- .run_reml(
-    y         = y,
-    X         = X,
-    g_list    = g_list,
-    method    = method,
-    max_iter  = max_iter,
-    tol       = tol,
-    n_threads = n_threads
-  )
+  timing <- system.time({
+    reml_result <- .run_reml(
+      y         = y,
+      X         = X,
+      g_list    = g_list,
+      method    = method,
+      max_iter  = max_iter,
+      tol       = tol,
+      n_threads = n_threads
+    )
 
-  # ── Check REML error ────────────────────────────────────────
-  if (!is.null(reml_result$error) && !is.na(reml_result$error)) {
-    stop(sprintf("REML failed: %s", reml_result$error))
-  }
+    if (!is.null(reml_result$error) && !is.na(reml_result$error)) {
+      stop(sprintf("REML failed: %s", reml_result$error))
+    }
 
-  # ── Solve EBV ───────────────────────────────────────────────
-  message(sprintf("Solving EBV [solver=%s]...", solver_used))
-
-  blup_result <- .solve_blup(
-    y          = y,
-    X          = X,
-    g_list     = g_list,
-    sigma2     = reml_result$sigma2,
-    solver     = solver_used,
-    max_iter   = max_iter,
-    tol        = tol
-  )
+    message(sprintf("Solving EBV [solver=%s]...", solver_used))
+    blup_result <- .solve_blup(
+      y          = y,
+      X          = X,
+      g_list     = g_list,
+      sigma2     = reml_result$sigma2,
+      solver     = solver_used,
+      max_iter   = max_iter,
+      tol        = tol
+    )
+  })
 
   # ── Assemble output ─────────────────────────────────────────
-  .assemble_output(
+  fit <- .assemble_output(
     y           = y,
     ids         = ids,
     g_names     = names(g_list),
@@ -256,6 +286,13 @@ masreml <- function(
     solver_used = solver_used,
     call        = call
   )
+
+  fit$runtime  <- as.numeric(timing["elapsed"])
+  fit$rds_path <- .maybe_save_rds_masreml(fit, save_rds, save_path)
+
+  if (isTRUE(verbose)) .print_run_summary(fit)
+
+  fit
 }
 
 # ============================================================

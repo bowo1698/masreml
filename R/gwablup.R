@@ -169,7 +169,9 @@ gwablup <- function(
     tol       = tol,
     trait     = trait,
     link      = link,
-    n_threads = n_threads
+    n_threads = n_threads,
+    verbose   = FALSE,   # gwablup has its own print.gwablup banner
+    save_rds  = FALSE
   )
 
   # ── Attach gwas_result + upgrade class ───────────────────

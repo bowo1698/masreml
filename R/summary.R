@@ -129,6 +129,122 @@ summary.masreml <- function(object, ...) {
   invisible(x)
 }
 
+# ============================================================
+# Auto-summary printed at the end of masreml() / .masreml_binary()
+# Mirrors masbayes::print_run_summary() but adapted for REML-BLUP.
+# Continuous and binary traits share a skeleton; the binary path
+# adds a Binary Trait block and reports liability/observed h2.
+# ============================================================
+
+#' @noRd
+.print_run_summary <- function(x) {
+  is_binary <- !is.null(x$binary)
+  trait_tag <- if (is_binary)
+    sprintf(" [binary trait, %s link]", x$binary$link)
+  else
+    " [continuous trait]"
+
+  rds_line <- if (!is.null(x$rds_path))
+    sprintf(" RDS saved to    : %s\n", x$rds_path) else ""
+
+  n_random <- length(x$varcomp$h2)
+  n_fixed  <- if (!is.null(x$fixed_effects)) length(x$fixed_effects) else 0L
+  comp_line <- sprintf("%s  (%d random + %d fixed)",
+                       paste(names(x$varcomp$h2), collapse = ", "),
+                       n_random, n_fixed)
+
+  cat("\n============================================================\n")
+  cat(sprintf(" masreml — REML-BLUP (algorithm: %s)%s\n",
+              x$algorithm, trait_tag))
+  cat("============================================================\n")
+  cat(sprintf(" Observations    : n = %d\n", x$n))
+  cat(sprintf(" Components      : %s\n", comp_line))
+  if (!is.null(x$runtime))
+    cat(sprintf(" Runtime         : %.2f seconds\n", x$runtime))
+  cat(sprintf(" Solver          : %s\n", x$solver))
+  cat(rds_line)
+
+  conv_str <- if (isTRUE(x$converged))
+    sprintf("TRUE  (iterations = %d, log-lik = %.4f)",
+            x$n_iter, x$loglik)
+  else
+    sprintf("FALSE (iterations = %d, did not converge — inspect fit$loglik)",
+            x$n_iter)
+  cat(sprintf("\n REML convergence: %s\n", conv_str))
+
+  # Variance components table
+  sigma2_vec <- x$varcomp$sigma2
+  sigma2_p   <- sum(sigma2_vec)
+  prop_vec   <- sigma2_vec / sigma2_p
+  h2_vec     <- x$varcomp$h2
+
+  cat("\n Variance Components\n")
+  cat(" ----------------------------------------\n")
+  cat(sprintf("   %-14s %10s %8s %8s\n",
+              "Component", "sigma2", "%var", "h2"))
+  for (nm in names(sigma2_vec)) {
+    h2_show <- if (nm %in% names(h2_vec))
+      sprintf("%8.4f", h2_vec[[nm]]) else "       —"
+    extra <- if (is_binary && nm == "residual") {
+      if (identical(x$binary$link, "logit"))
+        " (fixed: pi^2/3)"
+      else
+        " (fixed: 1.0)"
+    } else {
+      ""
+    }
+    cat(sprintf("   %-14s %10.4f %8.4f %s%s\n",
+                nm, sigma2_vec[[nm]], prop_vec[[nm]], h2_show, extra))
+  }
+  cat(" ----------------------------------------\n")
+
+  if (is_binary) {
+    cat(sprintf("   Total h2 (liability): %.4f  |  (observed): %.4f\n",
+                x$binary$h2_liability, x$binary$h2_observed))
+  } else {
+    cat(sprintf("   Total h2 (genetic) : %.4f\n", sum(h2_vec)))
+  }
+
+  # Binary trait extra block
+  if (is_binary) {
+    cat("\n Binary Trait (Laplace)\n")
+    cat(" ----------------------------------------\n")
+    cat(sprintf("   Prevalence    : %.4f\n", x$binary$prevalence))
+    cat(sprintf("   AUC           : %.4f\n", x$binary$auc))
+    fp <- x$binary$fitted
+    cat(sprintf("   Fitted P(y=1) : min=%.4f  mean=%.4f  max=%.4f\n",
+                min(fp), mean(fp), max(fp)))
+  }
+
+  # GEBV one-liner
+  g <- x$total_gebv
+  gebv_label <- if (is_binary) "GEBV (liability)" else "GEBV (total)    "
+  cat(sprintf("\n %s: min=%.4f  mean=%.4f  max=%.4f  sd=%.4f\n",
+              gebv_label, min(g), mean(g), max(g), sd(g)))
+
+  cat("\n Run summary(fit) for full report.\n")
+  cat("============================================================\n\n")
+  invisible(NULL)
+}
+
+#' @noRd
+.default_rds_path_masreml <- function() {
+  file.path(getwd(), "results_masreml.Rds")
+}
+
+#' @noRd
+.maybe_save_rds_masreml <- function(fit, save_rds, save_path) {
+  if (!isTRUE(save_rds)) return(NULL)
+  path <- if (is.null(save_path)) .default_rds_path_masreml() else save_path
+  tryCatch({
+    saveRDS(fit, file = path)
+    path
+  }, error = function(e) {
+    warning(sprintf("Failed to save RDS to '%s': %s", path, e$message))
+    NULL
+  })
+}
+
 #' Print Cross-Validation Results
 #'
 #' Compact display of cross-validation results from \code{cv_masreml()},

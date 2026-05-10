@@ -15,7 +15,10 @@ masreml(
   tol = 1e-06,
   n_threads = NULL,
   trait = "continuous",
-  link = "logit"
+  link = "logit",
+  verbose = TRUE,
+  save_rds = FALSE,
+  save_path = NULL
 )
 }
 \arguments{
@@ -80,6 +83,23 @@ approximation on liability scale
 \item \code{"logit"} (default): logistic link, sigma2_e = pi^2/3
 \item \code{"probit"}: probit link, sigma2_e = 1
 }}
+
+\item{verbose}{logical, if \code{TRUE} (default) prints a brief
+post-fit summary banner (algorithm, runtime, convergence, variance
+components, h2, GEBV summary) when \code{masreml()} returns. The
+existing progress messages (\code{"Building..."}, \code{"Running
+  REML..."}, \code{"Solving EBV..."}) are unaffected by this flag.}
+
+\item{save_rds}{logical, if \code{TRUE} the fit is also written to
+disk as an RDS file. Default \code{FALSE} \emph{(differs from
+\code{masbayes::run_bayesr()})} because \code{masreml()} is often
+called inside \code{\link{cv_masreml}} loops where auto-saving
+would clobber per-fold output. Set to \code{TRUE} for one-off
+full-data fits you want to persist.}
+
+\item{save_path}{optional explicit RDS path. If \code{NULL} (default),
+defaults to \code{"results_masreml.Rds"} in the current working
+directory. Ignored unless \code{save_rds = TRUE}.}
 }
 \value{
 Object of class \code{"masreml"} with elements:
@@ -116,6 +136,17 @@ estimated breeding values (GEBV) via BLUP. Supports SNP additive,
 SNP dominance, and MH additive relationship matrices, for both
 continuous and binary traits. For GWAS-assisted prediction, see
 \code{\link{run_gwas}} and \code{\link{gwablup}}.
+}
+\details{
+\strong{Auto-summary.} On completion, \code{masreml()} prints a brief
+banner mirroring \code{masbayes::run_bayesr()}/
+\code{masbayes::run_bayesa()}. Set \code{verbose = FALSE} to suppress.
+The full \code{\link{summary.masreml}} method is unchanged and is
+still the canonical detailed report.
+
+\strong{Runtime field.} The returned object now contains a
+\code{runtime} field (elapsed seconds for REML + BLUP), populated
+even when \code{verbose = FALSE}.
 }
 \examples{
 \dontrun{

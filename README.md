@@ -124,7 +124,10 @@ R package dependencies: `devtools` and `MASS`.
 
 ```r
 # Install from GitHub
-devtools::install_github("bowo1698/masreml")
+install.packages(
+    "https://github.com/bowo1698/masreml/archive/refs/heads/main.tar.gz",
+    repos = NULL, type = "source"
+)
 ```
 
 ---

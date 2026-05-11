@@ -38,7 +38,9 @@ commonly used.
 }
 \examples{
 \dontrun{
-fit <- masreml(y, markers = list(snp_add = W))
+d   <- load_data("small")
+y   <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+fit <- masreml(y, markers = list(snp_add = d$snp))
 
 acc <- compute_accuracy(
   gebv = fit$total_gebv,
@@ -46,8 +48,6 @@ acc <- compute_accuracy(
   h2   = fit$varcomp$h2["snp_add"]
 )
 print(acc)
-#      r  slope   r_MG
-# 0.823  0.991  0.914
 }
 
 }

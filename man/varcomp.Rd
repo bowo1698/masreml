@@ -28,11 +28,10 @@ of total variance explained by each component.
 }
 \examples{
 \dontrun{
-fit <- masreml(y, markers = list(snp_add = W))
+d   <- load_data("small")
+y   <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+fit <- masreml(y, markers = list(snp_add = d$snp))
 varcomp(fit)
-#   Component   Sigma2     H2 Proportion
-#     snp_add 0.412300 0.4123     0.4123
-#    residual 0.587700     NA     0.5877
 }
 
 }

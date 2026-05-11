@@ -35,15 +35,21 @@
 #'
 #' @examples
 #' \dontrun{
-#' ped <- data.frame(
-#'   id   = 1:5,
-#'   sire = c(0, 0, 1, 1, 3),
-#'   dam  = c(0, 0, 2, 2, 4)
+#' # build_A_ped() expects integer indices: id = 1..n, sire/dam = integers
+#' # into id (0 = unknown founder). The bundled pedigree uses character IDs
+#' # with NA for founder parents, so we convert before calling.
+#' d      <- load_data("small")
+#' ped    <- d$pedigree
+#' id_map <- setNames(seq_along(ped$id), ped$id)
+#' ped_int <- data.frame(
+#'   id   = id_map[ped$id],
+#'   sire = ifelse(is.na(ped$sire), 0L, id_map[ped$sire]),
+#'   dam  = ifelse(is.na(ped$dam),  0L, id_map[ped$dam])
 #' )
-#' A <- build_A_ped(ped)
-#'
-#' # Use in masreml (pedigree BLUP)
-#' fit <- masreml(y, G = list(pedigree = A))
+#' A <- build_A_ped(ped_int)
+#' dim(A)
+#' # Diagonal ~ 1 + inbreeding coefficient
+#' round(summary(diag(A)), 3)
 #' }
 #'
 #' @export
@@ -108,26 +114,15 @@ build_A_ped <- function(pedigree) {
 #'
 #' @examples
 #' \dontrun{
-#' # Create example genotype matrix (5 individuals, 4 SNPs)
-#' W <- matrix(
-#'   c(0, 1, 2, 1,
-#'     1, 0, 1, 2,
-#'     2, 1, 0, 1,
-#'     0, 2, 1, 0,
-#'     1, 1, 2, 1),
-#'   nrow = 5, ncol = 4, byrow = TRUE
-#' )
-#' rownames(W) <- paste0("ind", 1:5)
-#' colnames(W) <- paste0("SNP", 1:4)
+#' d <- load_data("small")
+#' G <- build_G_snp(d$snp)
 #'
-#' # Build G matrix
-#' G <- build_G_snp(W)
+#' # Diagonal should be ~1 + inbreeding coefficient
+#' round(summary(diag(G)), 3)
 #'
-#' # Check diagonal — should be ~1
-#' round(diag(G), 3)
-#'
-#' # Use pre-built G in masreml
-#' fit <- masreml(y, G = list(snp_add = G))
+#' # Train-only G with leakage-safe full-set G for prediction
+#' G_train <- build_G_snp(d$snp[d$train_idx, ])
+#' G_full  <- build_G_snp(d$snp, ref_W = d$snp[d$train_idx, ])
 #' }
 #'
 #' @export
@@ -167,15 +162,12 @@ build_G_snp <- function(W, ref_W = NULL) {
 #'
 #' @examples
 #' \dontrun{
-#' W <- matrix(sample(0:2, 100*50, replace=TRUE), 100, 50)
-#' rownames(W) <- paste0("ind", 1:100)
-#'
-#' # Additive + dominance model
-#' fit <- masreml(
-#'   y       = y,
-#'   markers = list(snp_add = W, snp_dom = W)
-#' )
-#' summary(fit)
+#' d <- load_data("small")
+#' D <- build_D_snp(d$snp)
+#' dim(D)
+#' # Off-diagonal mean ~ 0 under random mating; diagonal carries the
+#' # dominance "self" contributions.
+#' round(summary(diag(D)), 3)
 #' }
 #'
 #' @export
@@ -233,46 +225,20 @@ build_D_snp <- function(W) {
 #'
 #' @examples
 #' \dontrun{
-#' # mh_list: one data.frame per chromosome
-#' # Each row = one individual
-#' # Columns: ID, then paired strand columns per haplotype block
-#' chr1 <- data.frame(
-#'   ID    = paste0("ind", 1:5),
-#'   B1_s1 = c(0, 1, 0, 2, 1),   # block 1 strand 1
-#'   B1_s2 = c(1, 1, 2, 0, 0),   # block 1 strand 2
-#'   B2_s1 = c(2, 0, 1, 1, 0),   # block 2 strand 1
-#'   B2_s2 = c(0, 1, 2, 0, 1)    # block 2 strand 2
-#' )
-#' mh_list <- list(chr1 = chr1)
+#' d <- load_data("small")
+#' # d$mh is a haplotype matrix consumable directly via auto-detection.
+#' G_mh <- build_G_mh(d$mh)
+#' dim(G_mh)
+#' # Diagonal ~ 1 + inbreeding coefficient
+#' round(summary(diag(G_mh)), 3)
 #'
-#' # Build Agh matrix from mh_list
-#' G_mh <- build_G_mh(mh_list)
-#'
-#' # Build Agh matrix from haplotype matrix (train/test split)
-#' # hap_block_all: n x (n_blocks*2), any integer allele codes
+#' # Train-only G with leakage-safe full-set G for prediction
 #' G_mh_full <- build_G_mh(
-#'   mh_list = hap_block_all,
-#'   ref_mh  = hap_block_all[idx_train, ],
-#'   ids     = as.character(1:n_total)
+#'   mh_list = d$mh,
+#'   ref_mh  = d$mh[d$train_idx, ],
+#'   ids     = d$pheno$id
 #' )
-#'
-#' # Use in masreml
-#' fit <- masreml(y, G = list(mh_add = G_mh))
-#'
-#' # Use in run_gwas + gwablup (hap_matrix mode)
-#' fit_tr  <- masreml(y_train, markers = list(mh_add = hap_block_train))
-#' gwas_tr <- run_gwas(
-#'   markers     = list(mh_add = hap_block_train),
-#'   y           = y_train,
-#'   masreml_fit = fit_tr,
-#'   ref_markers = list(mh_add = hap_block_train)
-#' )
-#' fit_wa <- gwablup(
-#'   y           = y_train,
-#'   markers     = list(mh_add = hap_block_train),
-#'   gwas_result = gwas_tr,
-#'   ref_markers = list(mh_add = hap_block_train)
-#' )
+#' dim(G_mh_full)
 #' }
 #'
 #' @export
@@ -316,7 +282,9 @@ build_G_mh <- function(mh_list, ref_mh = NULL, ids = NULL) {
 #'
 #' @examples
 #' \dontrun{
-#' fit <- masreml(y, markers = list(snp_add = W))
+#' d   <- load_data("small")
+#' y   <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+#' fit <- masreml(y, markers = list(snp_add = d$snp))
 #'
 #' acc <- compute_accuracy(
 #'   gebv = fit$total_gebv,
@@ -324,8 +292,6 @@ build_G_mh <- function(mh_list, ref_mh = NULL, ids = NULL) {
 #'   h2   = fit$varcomp$h2["snp_add"]
 #' )
 #' print(acc)
-#' #      r  slope   r_MG
-#' # 0.823  0.991  0.914
 #' }
 #'
 #' @export
@@ -410,14 +376,11 @@ jitter_diagonal <- function(G, eps = 1e-6) {
 #'
 #' @examples
 #' \dontrun{
-#' fit <- masreml(y, markers = list(snp_add = W))
-#'
-#' # Export total GEBV
-#' df <- as.data.frame(fit)
-#' write.csv(df, "gebv.csv", row.names = FALSE)
-#'
-#' # Include per-component GEBV
-#' df_full <- as.data.frame(fit, include_components = TRUE)
+#' d   <- load_data("small")
+#' y   <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+#' fit <- masreml(y, markers = list(snp_add = d$snp))
+#' df  <- as.data.frame(fit)
+#' head(df)
 #' }
 #'
 #' @noRd
@@ -461,11 +424,10 @@ as.data.frame.masreml <- function(x, include_components = FALSE, ...) {
 #'
 #' @examples
 #' \dontrun{
-#' fit <- masreml(y, markers = list(snp_add = W))
+#' d   <- load_data("small")
+#' y   <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+#' fit <- masreml(y, markers = list(snp_add = d$snp))
 #' varcomp(fit)
-#' #   Component   Sigma2     H2 Proportion
-#' #     snp_add 0.412300 0.4123     0.4123
-#' #    residual 0.587700     NA     0.5877
 #' }
 #'
 #' @export

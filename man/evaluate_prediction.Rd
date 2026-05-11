@@ -49,27 +49,24 @@ Rank-invariant so unaffected by inverse-link transformation. NA if
 \description{
 Computes prediction accuracy metrics for test individuals. Designed
 to complement \code{predict.masreml()} for out-of-sample evaluation.
-Works with any GEBV source (masreml, masbayes, or other models).
 }
 \examples{
 \dontrun{
-pred <- predict(fit, G_full = list(g = G_full),
-                train_ids = train_ids, test_ids = test_ids)
+d   <- load_data("small")
+y   <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+fit <- masreml(y[d$train_idx],
+               markers = list(snp_add = d$snp[d$train_idx, ]))
+pred <- predict(fit,
+  markers_new   = list(snp_add = d$snp[d$test_idx, ]),
+  markers_train = list(snp_add = d$snp[d$train_idx, ]))
 
-# Continuous trait
+# Continuous trait — pass TBV for the standard breeding-value accuracy
+tbv_te <- d$pheno$tbv_qtl_snp[d$test_idx]; names(tbv_te) <- names(pred$GEBV)
 evaluate_prediction(
-  gebv = pred$total_gebv,
-  y    = y_test,
-  h2   = fit$varcomp$h2["g"],
-  tbv  = tbv_test
-)
-
-# Binary trait
-evaluate_prediction(
-  gebv        = pred$total_gebv,
-  y           = y_test,
-  h2          = fit$varcomp$h2["g"],
-  fitted_prob = pred$fitted
+  gebv = pred$GEBV,
+  y    = y[d$test_idx],
+  h2   = fit$varcomp$h2["snp_add"],
+  tbv  = tbv_te
 )
 }
 

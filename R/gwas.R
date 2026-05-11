@@ -59,48 +59,31 @@
 #'
 #' @examples
 #' \dontrun{
-#' # ── Standard workflow (all individuals) ───────────────────
-#' # Step 1: fit standard GBLUP
-#' fit <- masreml(y, markers = list(snp_add = W))
+#' d       <- load_data("small")
+#' y       <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+#' W_train <- d$snp[d$train_idx, ]
+#' y_train <- y[d$train_idx]
 #'
-#' # Step 2: run GWAS — inspect QTL signals
-#' gwas <- run_gwas(
-#'   markers     = list(snp_add = W),
-#'   y           = y,
-#'   masreml_fit = fit
-#' )
-#' summary(gwas)
-#'
-#' # Step 3: run GWABLUP using GWAS weights
-#' fit_wa <- gwablup(y, markers = list(snp_add = W), gwas_result = gwas)
-#' summary(fit_wa)
-#'
-#' # ── Train/test workflow (no data leakage) ─────────────────
 #' # Step 1: fit GBLUP on training only
 #' fit_tr <- masreml(y_train, markers = list(snp_add = W_train))
 #'
-#' # Step 2: run GWAS on training — ref_markers = training markers
+#' # Step 2: GWAS on training — ref_markers = training markers
 #' gwas_tr <- run_gwas(
 #'   markers     = list(snp_add = W_train),
 #'   y           = y_train,
 #'   masreml_fit = fit_tr,
 #'   ref_markers = list(snp_add = W_train)
 #' )
+#' summary(gwas_tr)
 #'
-#' # Step 3: GWABLUP on training with training-based freq
+#' # Step 3: GWABLUP with GWAS weights
 #' fit_wa_tr <- gwablup(
 #'   y           = y_train,
 #'   markers     = list(snp_add = W_train),
 #'   gwas_result = gwas_tr,
 #'   ref_markers = list(snp_add = W_train)
 #' )
-#'
-#' # Step 4: predict test set
-#' G_full <- build_G_snp(W_all, ref_W = W_train)
-#' pred   <- predict(fit_wa_tr,
-#'                   G_full    = list(snp_add = G_full),
-#'                   train_ids = rownames(W_train),
-#'                   test_ids  = rownames(W_test))
+#' summary(fit_wa_tr)
 #' }
 #'
 #' @export

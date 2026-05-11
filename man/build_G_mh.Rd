@@ -47,46 +47,20 @@ can represent. The resulting matrix can be used in \code{masreml()} or
 }
 \examples{
 \dontrun{
-# mh_list: one data.frame per chromosome
-# Each row = one individual
-# Columns: ID, then paired strand columns per haplotype block
-chr1 <- data.frame(
-  ID    = paste0("ind", 1:5),
-  B1_s1 = c(0, 1, 0, 2, 1),   # block 1 strand 1
-  B1_s2 = c(1, 1, 2, 0, 0),   # block 1 strand 2
-  B2_s1 = c(2, 0, 1, 1, 0),   # block 2 strand 1
-  B2_s2 = c(0, 1, 2, 0, 1)    # block 2 strand 2
-)
-mh_list <- list(chr1 = chr1)
+d <- load_data("small")
+# d$mh is a haplotype matrix consumable directly via auto-detection.
+G_mh <- build_G_mh(d$mh)
+dim(G_mh)
+# Diagonal ~ 1 + inbreeding coefficient
+round(summary(diag(G_mh)), 3)
 
-# Build Agh matrix from mh_list
-G_mh <- build_G_mh(mh_list)
-
-# Build Agh matrix from haplotype matrix (train/test split)
-# hap_block_all: n x (n_blocks*2), any integer allele codes
+# Train-only G with leakage-safe full-set G for prediction
 G_mh_full <- build_G_mh(
-  mh_list = hap_block_all,
-  ref_mh  = hap_block_all[idx_train, ],
-  ids     = as.character(1:n_total)
+  mh_list = d$mh,
+  ref_mh  = d$mh[d$train_idx, ],
+  ids     = d$pheno$id
 )
-
-# Use in masreml
-fit <- masreml(y, G = list(mh_add = G_mh))
-
-# Use in run_gwas + gwablup (hap_matrix mode)
-fit_tr  <- masreml(y_train, markers = list(mh_add = hap_block_train))
-gwas_tr <- run_gwas(
-  markers     = list(mh_add = hap_block_train),
-  y           = y_train,
-  masreml_fit = fit_tr,
-  ref_markers = list(mh_add = hap_block_train)
-)
-fit_wa <- gwablup(
-  y           = y_train,
-  markers     = list(mh_add = hap_block_train),
-  gwas_result = gwas_tr,
-  ref_markers = list(mh_add = hap_block_train)
-)
+dim(G_mh_full)
 }
 
 }

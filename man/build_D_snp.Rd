@@ -23,15 +23,12 @@ additive and dominance components.
 }
 \examples{
 \dontrun{
-W <- matrix(sample(0:2, 100*50, replace=TRUE), 100, 50)
-rownames(W) <- paste0("ind", 1:100)
-
-# Additive + dominance model
-fit <- masreml(
-  y       = y,
-  markers = list(snp_add = W, snp_dom = W)
-)
-summary(fit)
+d <- load_data("small")
+D <- build_D_snp(d$snp)
+dim(D)
+# Off-diagonal mean ~ 0 under random mating; diagonal carries the
+# dominance "self" contributions.
+round(summary(diag(D)), 3)
 }
 
 }

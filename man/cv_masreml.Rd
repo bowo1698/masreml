@@ -75,22 +75,28 @@ validation individuals.
 }
 \examples{
 \dontrun{
-# 5-fold cross-validation
-cv <- cv_masreml(
-  y       = y,
-  markers = list(snp_add = W),
-  folds   = 5,
-  seed    = 42
-)
-summary(cv)
+d <- load_data("small")
+y <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
 
-# Leave-one-out cross-validation
-cv_loo <- cv_masreml(
-  y     = y,
-  markers = list(snp_add = W),
-  folds = length(y)
+# 5-fold cross-validation
+cv5 <- cv_masreml(
+  y       = y,
+  markers = list(snp_add = d$snp),
+  folds   = 5L,
+  seed    = 42L
 )
-summary(cv_loo)
+summary(cv5)
+
+# 10-fold cross-validation (more stable accuracy estimate at n=100;
+# LOOCV at folds = length(y) is not currently supported because the
+# per-fold validation matrix collapses to a single row).
+cv10 <- cv_masreml(
+  y       = y,
+  markers = list(snp_add = d$snp),
+  folds   = 10L,
+  seed    = 42L
+)
+summary(cv10)
 }
 
 }

@@ -140,48 +140,38 @@
 #'
 #' @examples
 #' \dontrun{
+#' d        <- load_data("small")
+#' y        <- d$pheno$y_cont_qtl_snp;  names(y) <- d$pheno$id
+#' y_binary <- as.integer(d$pheno$y_bin_qtl_snp); names(y_binary) <- d$pheno$id
+#'
 #' # ── Continuous trait ─────────────────────────────────────
-#' # SNP additive GBLUP
-#' fit <- masreml(y = y, markers = list(snp_add = W))
+#' # SNP additive GBLUP (markers list, masreml builds G internally)
+#' fit <- masreml(y = y, markers = list(snp_add = d$snp))
 #' summary(fit)
 #'
-#' # MH additive only
-#' fit <- masreml(y = y, markers = list(mh_add = mh_list))
+#' # MH additive only (d$mh is auto-detected as a hap-block matrix)
+#' fit <- masreml(y = y, markers = list(mh_add = d$mh))
 #'
 #' # Combined SNP additive + dominance
 #' fit <- masreml(
 #'   y       = y,
-#'   markers = list(snp_add = W, snp_dom = W),
+#'   markers = list(snp_add = d$snp, snp_dom = d$snp),
 #'   method  = "AI"
 #' )
 #'
 #' # Pre-built G matrix
+#' G   <- build_G_snp(d$snp)
 #' fit <- masreml(y = y, G = list(snp_add = G))
 #'
 #' # ── Binary trait ─────────────────────────────────────────
 #' # Binary GBLUP (logit link, default HE)
-#' fit <- masreml(
-#'   y     = y_binary,
-#'   markers = list(snp_add = W),
-#'   trait = "binary"
-#' )
+#' fit <- masreml(y = y_binary, markers = list(snp_add = d$snp),
+#'                trait = "binary")
 #' summary(fit)
 #'
 #' # Binary with probit link
-#' fit <- masreml(
-#'   y     = y_binary,
-#'   markers = list(snp_add = W),
-#'   trait = "binary",
-#'   link  = "probit"
-#' )
-#'
-#' # Binary with EM-REML for variance components
-#' fit <- masreml(
-#'   y      = y_binary,
-#'   markers = list(snp_add = W),
-#'   trait  = "binary",
-#'   method = "EM"
-#' )
+#' fit <- masreml(y = y_binary, markers = list(snp_add = d$snp),
+#'                trait = "binary", link = "probit")
 #' }
 #'
 #' @export

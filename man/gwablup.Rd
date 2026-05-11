@@ -81,25 +81,13 @@ User workflow:
 }
 \examples{
 \dontrun{
-# ── SNP GWABLUP ───────────────────────────────────────────
-fit    <- masreml(y, markers = list(snp_add = W))
-gwas   <- run_gwas(markers = list(snp_add = W), y = y, masreml_fit = fit)
-fit_wa <- gwablup(y, markers = list(snp_add = W), gwas_result = gwas)
-summary(fit_wa)
+d       <- load_data("small")
+y       <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+W_train <- d$snp[d$train_idx, ]
+W_test  <- d$snp[d$test_idx, ]
+y_train <- y[d$train_idx]
 
-# ── MH GWABLUP ────────────────────────────────────────────
-fit    <- masreml(y, markers = list(mh_add = mh_list))
-gwas   <- run_gwas(markers = list(mh_add = mh_list), y = y, masreml_fit = fit)
-fit_wa <- gwablup(y, markers = list(mh_add = mh_list), gwas_result = gwas)
-summary(fit_wa)
-
-# ── Compare GBLUP vs GWABLUP ──────────────────────────────
-fit_gblup   <- masreml(y, markers = list(snp_add = W))
-gwas        <- run_gwas(list(snp_add = W), y, fit_gblup)
-fit_gwablup <- gwablup(y, list(snp_add = W), gwas)
-cor(fit_gblup$total_gebv, fit_gwablup$total_gebv)
-
-# ── Train/test workflow (no data leakage) ─────────────────
+# ── SNP GWABLUP train/test ──────────────
 fit_tr  <- masreml(y_train, markers = list(snp_add = W_train))
 gwas_tr <- run_gwas(
   markers     = list(snp_add = W_train),
@@ -114,18 +102,14 @@ fit_wa_tr <- gwablup(
   ref_markers = list(snp_add = W_train)
 )
 
-# ── Binary trait GWABLUP ──────────────────────────────────
-fit_tr_bin <- masreml(y_bin_train, markers = list(snp_add = W_train),
-                      trait = "binary")
-gwas_bin   <- run_gwas(list(snp_add = W_train), y_bin_train, fit_tr_bin,
-                       ref_markers = list(snp_add = W_train))
-fit_wa_bin <- gwablup(y_bin_train, list(snp_add = W_train), gwas_bin,
-                      trait = "binary", ref_markers = list(snp_add = W_train))
-G_full <- build_G_snp(W_all, ref_W = W_train)
+summary(fit_wa_tr)
+
+G_full <- build_G_snp(d$snp, ref_W = W_train)
 pred   <- predict(fit_wa_tr,
                   G_full    = list(snp_add = G_full),
                   train_ids = rownames(W_train),
                   test_ids  = rownames(W_test))
+head(pred$GEBV)
 }
 
 }

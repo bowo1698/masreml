@@ -34,15 +34,21 @@ genomic relationship matrices.
 }
 \examples{
 \dontrun{
-ped <- data.frame(
-  id   = 1:5,
-  sire = c(0, 0, 1, 1, 3),
-  dam  = c(0, 0, 2, 2, 4)
+# build_A_ped() expects integer indices: id = 1..n, sire/dam = integers
+# into id (0 = unknown founder). The bundled pedigree uses character IDs
+# with NA for founder parents, so we convert before calling.
+d      <- load_data("small")
+ped    <- d$pedigree
+id_map <- setNames(seq_along(ped$id), ped$id)
+ped_int <- data.frame(
+  id   = id_map[ped$id],
+  sire = ifelse(is.na(ped$sire), 0L, id_map[ped$sire]),
+  dam  = ifelse(is.na(ped$dam),  0L, id_map[ped$dam])
 )
-A <- build_A_ped(ped)
-
-# Use in masreml (pedigree BLUP)
-fit <- masreml(y, G = list(pedigree = A))
+A <- build_A_ped(ped_int)
+dim(A)
+# Diagonal ~ 1 + inbreeding coefficient
+round(summary(diag(A)), 3)
 }
 
 }

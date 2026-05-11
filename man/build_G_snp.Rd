@@ -32,26 +32,15 @@ argument.
 }
 \examples{
 \dontrun{
-# Create example genotype matrix (5 individuals, 4 SNPs)
-W <- matrix(
-  c(0, 1, 2, 1,
-    1, 0, 1, 2,
-    2, 1, 0, 1,
-    0, 2, 1, 0,
-    1, 1, 2, 1),
-  nrow = 5, ncol = 4, byrow = TRUE
-)
-rownames(W) <- paste0("ind", 1:5)
-colnames(W) <- paste0("SNP", 1:4)
+d <- load_data("small")
+G <- build_G_snp(d$snp)
 
-# Build G matrix
-G <- build_G_snp(W)
+# Diagonal should be ~1 + inbreeding coefficient
+round(summary(diag(G)), 3)
 
-# Check diagonal — should be ~1
-round(diag(G), 3)
-
-# Use pre-built G in masreml
-fit <- masreml(y, G = list(snp_add = G))
+# Train-only G with leakage-safe full-set G for prediction
+G_train <- build_G_snp(d$snp[d$train_idx, ])
+G_full  <- build_G_snp(d$snp, ref_W = d$snp[d$train_idx, ])
 }
 
 }

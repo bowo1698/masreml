@@ -91,35 +91,41 @@
 #'
 #' @examples
 #' \dontrun{
+#' d       <- load_data("small")
+#' W       <- d$snp
+#' y       <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+#' W_train <- W[d$train_idx, ]
+#' W_test  <- W[d$test_idx, ]
+#' y_train <- y[d$train_idx]
+#' y_test  <- y[d$test_idx]
+#'
 #' # ── In-sample mode: shortcut to training metrics ──────────
 #' fit  <- masreml(y_train, markers = list(snp_add = W_train))
 #' pred <- predict(fit)               # no test data → returns training info
 #' pred$metrics                       # = fit$training_metrics
 #'
-#' # ── Mode A: G_full pre-built, with auto-metrics ───────────
-#' G_full <- build_G_snp(W_all)       # n_total x n_total
-#' fit    <- masreml(y_train, G = list(snp_add = G_train))
-#'
-#' pred <- predict(fit,
+#' # ── G_full pre-built, with auto-metrics ───────────────────
+#' G_full <- build_G_snp(W, ref_W = W_train)
+#' G_tr   <- G_full[rownames(W_train), rownames(W_train)]
+#' fit_g  <- masreml(y_train, G = list(snp_add = G_tr))
+#' pred_g <- predict(fit_g,
 #'   G_full    = list(snp_add = G_full),
 #'   train_ids = rownames(W_train),
 #'   test_ids  = rownames(W_test),
-#'   y_new     = y_test)              # auto-compute test metrics
-#' pred$GEBV
-#' pred$metrics$accuracy
+#'   y_new     = y_test)
+#' pred_g$metrics$accuracy
 #'
-#' # ── Mode B: markers_new + auto-metrics ────────────────────
-#' fit  <- masreml(y_train, markers = list(snp_add = W_train))
-#' pred <- predict(fit,
+#' # ── markers_new + auto-metrics ────────────────────────────
+#' pred_m <- predict(fit,
 #'   markers_new   = list(snp_add = W_test),
 #'   markers_train = list(snp_add = W_train),
 #'   y_new         = y_test)
-#' pred$metrics$bias                  # calibration slope (binary) / dispersion
+#' pred_m$metrics$bias
 #'
 #' # ── Forecast only (no y_new) ──────────────────────────────
 #' fc <- predict(fit, markers_new = list(snp_add = W_test),
 #'                    markers_train = list(snp_add = W_train))
-#' fc$GEBV                            # metrics is NULL
+#' head(fc$GEBV)                      # metrics is NULL
 #' }
 #'
 #' @export
@@ -358,7 +364,6 @@ predict.masreml <- function(
 #'
 #' Computes prediction accuracy metrics for test individuals. Designed
 #' to complement \code{predict.masreml()} for out-of-sample evaluation.
-#' Works with any GEBV source (masreml, masbayes, or other models).
 #'
 #' @param gebv numeric vector of predicted GEBV for test individuals
 #' @param y numeric vector of observed phenotypes for test individuals
@@ -398,23 +403,21 @@ predict.masreml <- function(
 #'
 #' @examples
 #' \dontrun{
-#' pred <- predict(fit, G_full = list(g = G_full),
-#'                 train_ids = train_ids, test_ids = test_ids)
+#' d   <- load_data("small")
+#' y   <- d$pheno$y_cont_qtl_snp; names(y) <- d$pheno$id
+#' fit <- masreml(y[d$train_idx],
+#'                markers = list(snp_add = d$snp[d$train_idx, ]))
+#' pred <- predict(fit,
+#'   markers_new   = list(snp_add = d$snp[d$test_idx, ]),
+#'   markers_train = list(snp_add = d$snp[d$train_idx, ]))
 #'
-#' # Continuous trait
+#' # Continuous trait — pass TBV for the standard breeding-value accuracy
+#' tbv_te <- d$pheno$tbv_qtl_snp[d$test_idx]; names(tbv_te) <- names(pred$GEBV)
 #' evaluate_prediction(
-#'   gebv = pred$total_gebv,
-#'   y    = y_test,
-#'   h2   = fit$varcomp$h2["g"],
-#'   tbv  = tbv_test
-#' )
-#'
-#' # Binary trait
-#' evaluate_prediction(
-#'   gebv        = pred$total_gebv,
-#'   y           = y_test,
-#'   h2          = fit$varcomp$h2["g"],
-#'   fitted_prob = pred$fitted
+#'   gebv = pred$GEBV,
+#'   y    = y[d$test_idx],
+#'   h2   = fit$varcomp$h2["snp_add"],
+#'   tbv  = tbv_te
 #' )
 #' }
 #'

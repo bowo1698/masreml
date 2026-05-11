@@ -1,205 +1,115 @@
 # examples/01_basic_continuous_trait.R
 #
-# REML-BLUP genomic prediction for a continuous trait using SNP additive markers.
+# REML-BLUP genomic prediction for a continuous trait using multi-allelic
+# microhaplotype (MH) markers. Uses the bundled demo dataset (load_data()):
+# 10 full-sib families x 20 offspring, within-family 80/20 split, QTL
+# effects placed at the allele-level W_mh columns (QTL@MH architecture).
 #
-# Demonstrates two modelling modes:
-#   Mode A — raw marker matrix passed directly to masreml() (internal G-building)
-#   Mode B — pre-built G matrix via build_G_snp(), with G_full for test prediction
+# For the analogous SNP path and a direct SNP-vs-MH comparison study see
+# examples/03_marker_QTL_congruency_theory.R.
 #
-# Reference: VanRaden (2008) J. Dairy Sci. 91:4414-4423
+# Reference: Da, Y. (2015) BMC Genet. 16:144 (multi-allelic W_ah coding)
 # Requires : masreml  (devtools::install_github("bowo1698/masreml"))
 
 library(masreml)
 
-set.seed(42)
-n        <- 500   # total individuals
-p_snp    <- 200   # number of SNP markers
-p_causal <- 10    # number of causal SNPs
+# ── Load bundled demo data ──────────────────────────────────────────────────
+d <- load_data()
+y <- d$pheno$y_cont_qtl_mh           # continuous trait, QTL@MH architecture
+names(y) <- d$pheno$id               # masreml requires named y
+X <- model.matrix(~ sex - 1, data = d$pheno)
+tbv <- d$pheno$tbv_qtl_mh            # true breeding values for accuracy check
+names(tbv) <- d$pheno$id
 
-# ── Simulate SNP genotype matrix (0 / 1 / 2 allele counts) ──────────────────
-cat("Simulating SNP genotype data...\n")
-W <- matrix(
-  rbinom(n * p_snp, size = 2, prob = 0.3),
-  nrow = n, ncol = p_snp
-)
-rownames(W) <- paste0("ind", seq_len(n))
-colnames(W) <- paste0("SNP", seq_len(p_snp))
+cat(sprintf("  n=%d | mean(y)=%.3f | sd(y)=%.3f\n",
+            nrow(d$mh), mean(y), sd(y)))
 
-# ── Simulate continuous phenotype ────────────────────────────────────────────
-# y = additive genetic effects (p_causal SNPs) + environmental noise
-cat("Simulating continuous phenotype...\n")
-beta_causal <- rnorm(p_causal, mean = 0, sd = 0.3)
-W_scaled    <- scale(W[, seq_len(p_causal)])
-g_true      <- as.numeric(W_scaled %*% beta_causal)   # true breeding values
-names(g_true) <- rownames(W)
-e           <- rnorm(n, mean = 0, sd = 1)
-y           <- g_true + e
-names(y)    <- rownames(W)
-
-h2_sim <- var(g_true) / var(y)
-cat(sprintf(
-  "  n=%d | mean=%.3f | SD=%.3f | simulated h2=%.3f\n",
-  n, mean(y), sd(y), h2_sim
-))
-
-# ── Train / test split (80 / 20) ─────────────────────────────────────────────
-set.seed(123)
-idx_train <- sample(n, floor(0.8 * n))
-W_train   <- W[idx_train, ]
+# ── Bundled train / test split (within-family 80/20) ────────────────────────
+idx_train <- d$train_idx
+idx_test  <- d$test_idx
+ids_train <- d$pheno$id[idx_train]
+ids_test  <- d$pheno$id[idx_test]
 y_train   <- y[idx_train]
-W_test    <- W[-idx_train, ]
-y_test    <- y[-idx_train]
+y_test    <- y[idx_test]
+tbv_test  <- tbv[idx_test]
 
-cat(sprintf("  Training: n=%d | Test: n=%d\n\n", length(y_train), length(y_test)))
+cat(sprintf("  Training: n=%d | Test: n=%d (within-family split)\n\n",
+            length(y_train), length(y_test)))
 
-# ════════════════════════════════════════════════════════════════════════════
-# MODE A — Raw markers passed directly; masreml() builds G internally
-# ════════════════════════════════════════════════════════════════════════════
+# ── Build the MH genomic relationship matrix (G_mh) ─────────────────────────
+# build_G_mh() auto-detects the bundled haplotype matrix (n x 2*n_blocks).
+# The full G_full enables leakage-safe test-set prediction via the G_full
+# predict route; the train-only block G_train is what masreml() fits on.
+G_full  <- build_G_mh(d$mh, ids = d$pheno$id)
+G_train <- G_full[ids_train, ids_train]
 
-cat("== MODE A: Raw markers -> internal G-building ==\n")
-
-fit_a <- masreml(
+# ── Fit: GBLUP with pre-built G_train ───────────────────────────────────────
+fit <- masreml(
   y       = y_train,
-  markers = list(snp_add = W_train),
-  method  = "auto",       # AI-REML for continuous traits
-  solver  = "auto",       # Cholesky when n < 10,000
+  X       = X[idx_train, , drop = FALSE],
+  G       = list(mh_add = G_train),
+  method  = "auto",         # AI-REML for continuous traits
+  solver  = "auto",         # Cholesky when n < 10,000
   trait   = "continuous"
 )
 
 cat("\n")
-summary(fit_a)
+summary(fit)
 
-# Variance components table
-vc_a <- varcomp(fit_a)
-cat("\nVariance components (Mode A):\n")
-print(vc_a)
+# Variance components and heritability
+vc <- varcomp(fit)
+cat("\nVariance components:\n")
+print(vc)
+h2 <- fit$varcomp$h2["mh_add"]
 
-# h2 is stored in the raw varcomp list, not in the varcomp() data.frame
-h2_a <- fit_a$varcomp$h2["snp_add"]
+# Training accuracy (in-sample)
+acc_train <- compute_accuracy(gebv = fit$total_gebv, y = y_train, h2 = h2)
+cat(sprintf("\nTraining accuracy: r=%.4f | slope=%.4f | r_MG=%.4f\n",
+            acc_train$r, acc_train$slope, acc_train$r_MG))
 
-# In-sample accuracy (training set)
-acc_train_a <- compute_accuracy(
-  gebv = fit_a$total_gebv,
-  y    = y_train,
-  h2   = h2_a
-)
-cat(sprintf(
-  "\nTraining accuracy (Mode A): r=%.4f | slope=%.4f | r_MG=%.4f\n",
-  acc_train_a$r, acc_train_a$slope, acc_train_a$r_MG
-))
-
-# Test-set prediction using markers_new + markers_train
-# Allele frequencies are derived from markers_train only (no data leakage)
-cat("Predicting test set (Mode A: markers_new mode)...\n")
-pred_a <- predict(
-  fit_a,
-  markers_new   = list(snp_add = W_test),
-  markers_train = list(snp_add = W_train)
+# ── Test-set prediction (G_full route, leakage-safe) ────────────────────────
+# We pass the full G alongside train_ids / test_ids; predict() pulls the
+# cross-block G[test, train] internally and applies the appropriate BLUP
+# formula. y_new triggers automatic test-set metrics.
+pred <- predict(
+  fit,
+  G_full    = list(mh_add = G_full),
+  train_ids = ids_train,
+  test_ids  = ids_test,
+  X_new     = X[idx_test, , drop = FALSE],
+  y_new     = y_test
 )
 
-eval_a <- evaluate_prediction(
-  gebv = pred_a$GEBV,
+cat("\nTest-set evaluation (auto-computed by predict()):\n")
+print(pred$metrics)
+
+# evaluate_prediction() adds the TBV-based accuracy column (r_test_g) using
+# the simulated truth. cor(GEBV, TBV) is the standard genomic-prediction
+# accuracy in breeding literature -- not bounded by sqrt(h2) like
+# cor(GEBV, y).
+eval_full <- evaluate_prediction(
+  gebv = pred$GEBV,
   y    = y_test,
-  h2   = h2_a,
-  tbv  = g_true[names(pred_a$GEBV)]
+  h2   = h2,
+  tbv  = tbv_test[names(pred$GEBV)]
 )
-cat("Test-set evaluation (Mode A):\n")
-print(eval_a)
+cat("\nEvaluation including TBV-based accuracy:\n")
+print(eval_full)
 
-# ════════════════════════════════════════════════════════════════════════════
-# MODE B — Pre-built G matrix via build_G_snp()
-# ════════════════════════════════════════════════════════════════════════════
-
-cat("\n\n== MODE B: Pre-built G matrix ==\n")
-
-# Build training G; no ref_W needed when only training individuals are present
-G_train <- build_G_snp(W_train)
-
-fit_b <- masreml(
-  y      = y_train,
-  G      = list(snp_add = G_train),
-  method = "auto",
-  solver = "auto",
-  trait  = "continuous"
-)
-
-cat("\n")
-summary(fit_b)
-
-vc_b <- varcomp(fit_b)
-cat("\nVariance components (Mode B):\n")
-print(vc_b)
-
-h2_b <- fit_b$varcomp$h2["snp_add"]
-
-# Build full G (train + test) using training allele frequencies (ref_W = W_train)
-# ref_W prevents data leakage from test individuals into allele frequency estimates
-cat("Building full G matrix (train + test) with training allele frequencies...\n")
-G_full <- build_G_snp(W, ref_W = W_train)
-
-cat("Predicting test set (Mode B: G_full mode)...\n")
-pred_b <- predict(
-  fit_b,
-  G_full    = list(snp_add = G_full),
-  train_ids = rownames(W_train),
-  test_ids  = rownames(W_test)
-)
-
-eval_b <- evaluate_prediction(
-  gebv = pred_b$GEBV,
-  y    = y_test,
-  h2   = h2_b,
-  tbv  = g_true[names(pred_b$GEBV)]
-)
-cat("Test-set evaluation (Mode B):\n")
-print(eval_b)
-
-# ════════════════════════════════════════════════════════════════════════════
-# Comparison: Mode A vs Mode B
-# ════════════════════════════════════════════════════════════════════════════
-
-cat("\n\n== Comparison: Mode A vs Mode B ==\n")
-comp <- data.frame(
-  Mode        = c("A (raw markers)", "B (pre-built G)"),
-  h2_estimate = round(c(h2_a, h2_b), 4),
-  r_test_y    = round(c(eval_a$r_test_y, eval_b$r_test_y), 4),
-  r_test_g    = round(c(eval_a$r_test_g, eval_b$r_test_g), 4),
-  bias        = round(c(eval_a$bias, eval_b$bias), 4),
-  RMSE        = round(c(eval_a$RMSE, eval_b$RMSE), 4)
-)
-print(comp, row.names = FALSE)
-cat(sprintf("Simulated h2: %.4f\n", h2_sim))
-
-# ════════════════════════════════════════════════════════════════════════════
-# Visualisation: GEBV vs observed phenotype (test set)
-# ════════════════════════════════════════════════════════════════════════════
-
-par(mfrow = c(1, 2))
-
+# ── Visualisation: GEBV vs observed phenotype (test set) ────────────────────
 plot(
-  pred_a$GEBV, y_test,
-  main = sprintf("Mode A: GEBV vs Phenotype (r=%.3f)", eval_a$r_test_y),
+  pred$GEBV, y_test,
+  main = sprintf("GEBV vs Phenotype (r=%.3f, r_test_g=%.3f)",
+                 eval_full$r_test_y, eval_full$r_test_g),
   xlab = "GEBV", ylab = "Phenotype",
-  pch = 16, col = rgb(0.2, 0.4, 0.8, 0.5)
+  pch  = 16, col = rgb(0.2, 0.4, 0.8, 0.5)
 )
-abline(lm(y_test ~ pred_a$GEBV), col = "red", lwd = 2)
+abline(lm(y_test ~ pred$GEBV), col = "red", lwd = 2)
 abline(0, 1, col = "grey50", lty = 2)
 legend("topleft", legend = c("Regression", "1:1 line"),
        col = c("red", "grey50"), lty = c(1, 2), lwd = c(2, 1),
        bty = "n", cex = 0.8)
 
-plot(
-  pred_b$GEBV, y_test,
-  main = sprintf("Mode B: GEBV vs Phenotype (r=%.3f)", eval_b$r_test_y),
-  xlab = "GEBV", ylab = "Phenotype",
-  pch = 16, col = rgb(0.8, 0.3, 0.2, 0.5)
-)
-abline(lm(y_test ~ pred_b$GEBV), col = "red", lwd = 2)
-abline(0, 1, col = "grey50", lty = 2)
-legend("topleft", legend = c("Regression", "1:1 line"),
-       col = c("red", "grey50"), lty = c(1, 2), lwd = c(2, 1),
-       bty = "n", cex = 0.8)
-
-par(mfrow = c(1, 1))
-
+cat(sprintf("\nG_mh dimensions: %d x %d (n x n; same shape as G_snp)\n",
+            nrow(G_full), ncol(G_full)))
 cat("\nDone.\n")

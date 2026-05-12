@@ -30,6 +30,18 @@ relationships among individuals based on SNP marker data, and can be
 used directly in \code{masreml()} or \code{gwablup()} via the \code{G}
 argument.
 }
+\details{
+\strong{SNP additive GRM (VanRaden 2008).}
+The centred genotype matrix \eqn{W} is first constructed by:
+\deqn{W_{ij} = X_{ij} - 2p_j}
+where \eqn{X_{ij} \in \{0,1,2\}} is the allele dosage of individual
+\eqn{i} at SNP \eqn{j} and \eqn{p_j} is the allele frequency.
+The additive GRM is then:
+\deqn{G = \frac{WW^\top}{2\sum_j p_j(1-p_j)}}
+The denominator \eqn{2\sum_j p_j(1-p_j)} scales \eqn{G} so that
+diagonal elements average approximately 1 (i.e., similar to the
+pedigree-based numerator relationship matrix).
+}
 \examples{
 \dontrun{
 d <- load_data("small")
@@ -45,8 +57,8 @@ G_full  <- build_G_snp(d$snp, ref_W = d$snp[d$train_idx, ])
 
 }
 \references{
-VanRaden (2008) Efficient methods to compute genomic predictions.
-\emph{J. Dairy Sci.} 91:4414-4423.
+VanRaden, P. M. (2008) Efficient methods to compute genomic predictions.
+\emph{J. Dairy Sci.} 91:4414-4423. \doi{10.3168/jds.2007-0980}
 }
 \seealso{
 \code{\link{build_G_mh}}, \code{\link{build_D_snp}},

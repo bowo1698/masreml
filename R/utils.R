@@ -90,6 +90,18 @@ build_A_ped <- function(pedigree) {
 #' used directly in \code{masreml()} or \code{gwablup()} via the \code{G}
 #' argument.
 #'
+#' @details
+#' \strong{SNP additive GRM (VanRaden 2008).}
+#' The centred genotype matrix \eqn{W} is first constructed by:
+#' \deqn{W_{ij} = X_{ij} - 2p_j}
+#' where \eqn{X_{ij} \in \{0,1,2\}} is the allele dosage of individual
+#' \eqn{i} at SNP \eqn{j} and \eqn{p_j} is the allele frequency.
+#' The additive GRM is then:
+#' \deqn{G = \frac{WW^\top}{2\sum_j p_j(1-p_j)}}
+#' The denominator \eqn{2\sum_j p_j(1-p_j)} scales \eqn{G} so that
+#' diagonal elements average approximately 1 (i.e., similar to the
+#' pedigree-based numerator relationship matrix).
+#'
 #' @param W numeric matrix (n x m) of raw genotype codes, where n is the
 #'   number of individuals and m is the number of SNP markers. Values must
 #'   be 0, 1, or 2 representing the number of copies of the reference
@@ -109,8 +121,8 @@ build_A_ped <- function(pedigree) {
 #'   \code{\link{masreml}}
 #'
 #' @references
-#' VanRaden (2008) Efficient methods to compute genomic predictions.
-#' \emph{J. Dairy Sci.} 91:4414-4423.
+#' VanRaden, P. M. (2008) Efficient methods to compute genomic predictions.
+#' \emph{J. Dairy Sci.} 91:4414-4423. \doi{10.3168/jds.2007-0980}
 #'
 #' @examples
 #' \dontrun{
@@ -143,10 +155,22 @@ build_G_snp <- function(W, ref_W = NULL) {
 #' Build SNP Dominance Relationship Matrix
 #'
 #' Constructs the SNP dominance relationship matrix (D) following
-#' Da et al. (2015). Captures non-additive (dominance) genetic
+#' Da (2015). Captures non-additive (dominance) genetic
 #' relationships among individuals. Can be used alongside the additive
 #' G matrix in \code{masreml()} to partition genetic variance into
 #' additive and dominance components.
+#'
+#' @details
+#' \strong{SNP dominance GRM (Da, 2015).}
+#' For individual \eqn{i} at SNP \eqn{j} with allele frequency \eqn{p_j}
+#' and \eqn{q_j = 1 - p_j}, the dominance-coded value is:
+#' \describe{
+#'   \item{Genotype \eqn{aa} (dosage = 0):}{\eqn{W_{D,ij} = -2p_j^2}}
+#'   \item{Genotype \eqn{Aa} (dosage = 1):}{\eqn{W_{D,ij} = 2p_j q_j}}
+#'   \item{Genotype \eqn{AA} (dosage = 2):}{\eqn{W_{D,ij} = -2q_j^2}}
+#' }
+#' The dominance GRM is then:
+#' \deqn{D = \frac{W_D W_D^\top}{\sum_j (2p_j q_j)^2}}
 #'
 #' @param W numeric matrix (n x m) of raw genotype codes, where n is the
 #'   number of individuals and m is the number of SNP markers. Values must
@@ -157,8 +181,9 @@ build_G_snp <- function(W, ref_W = NULL) {
 #' @seealso \code{\link{build_G_snp}}, \code{\link{masreml}}
 #'
 #' @references
-#' Da et al. (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction
-#' and variance component estimation using SNP markers. \emph{BMC Genet.} 15:100.
+#' Da, Y. (2015) Multi-allelic haplotype model based on genetic partition for
+#' genomic prediction and variance component estimation using SNP markers.
+#' \emph{BMC Genetics} 16:144. \doi{10.1186/s12863-015-0301-1}
 #'
 #' @examples
 #' \dontrun{
@@ -181,11 +206,34 @@ build_D_snp <- function(W) {
 
 #' Build Multi-allelic Additive Genomic Relationship Matrix
 #'
-#' Constructs the multi-allelic (MH) additive genomic relationship matrix
-#' (Wgh) following Da (2015). Uses multi-allelic haplotype block coding
-#' (W_ah) that captures haplotype diversity beyond what bi-allelic SNPs
-#' can represent. The resulting matrix can be used in \code{masreml()} or
-#' \code{gwablup()} via the \code{G} argument.
+#' Constructs the multi-allelic additive genomic relationship matrix
+#' following Da (2015). Uses multi-allelic haplotype block coding
+#' (\eqn{W_{ah}}) that captures haplotype diversity beyond what bi-allelic
+#' SNPs can represent. The resulting matrix can be used in \code{masreml()}
+#' or \code{gwablup()} via the \code{G} argument.
+#'
+#' @details
+#' \strong{Multi-allelic additive GRM (Da, 2015).}
+#' For individual \eqn{i} with phased alleles \eqn{(A_i, A_j)} at haplotype
+#' block \eqn{h}, the column corresponding to non-baseline allele \eqn{k}
+#' (with population frequency \eqn{p_k}) is coded as:
+#' \describe{
+#'   \item{Homozygous (\eqn{A_i = A_j = k}):}{
+#'     \eqn{W_{\alpha h}^{(k)} = -2(1 - p_k)}}
+#'   \item{Heterozygous (\eqn{A_i = k} or \eqn{A_j = k}):}{
+#'     \eqn{W_{\alpha h}^{(k)} = -(1 - 2p_k)}}
+#'   \item{Absent (\eqn{A_i \neq k} and \eqn{A_j \neq k}):}{
+#'     \eqn{W_{\alpha h}^{(k)} = 2p_k}}
+#' }
+#' Rare alleles receive larger absolute deviations; common alleles receive
+#' smaller deviations. The population column-mean is zero by construction,
+#' ensuring the additive effects sum to zero across individuals.
+#' 
+#' The additive multi-allelic GRM is then:
+#' \deqn{A_{gh} = \frac{W_{ah} W_{ah}^\top}{k_{ah}}, \quad
+#'   k_{ah} = \frac{\mathrm{tr}(W_{ah} W_{ah}^\top)}{n}}
+#' where \eqn{n} is the number of individuals and \eqn{k_{ah}} scales the
+#' matrix so that diagonal elements average approximately 1.
 #'
 #' @param mh_list list of data.frames (one per chromosome) or integer matrix
 #'   (n x n_blocks*2). Two input modes are supported:
@@ -220,8 +268,9 @@ build_D_snp <- function(W) {
 #'   \code{\link{run_gwas}}
 #'
 #' @references
-#' Da et al. (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction
-#' and variance component estimation using SNP markers. \emph{BMC Genet.} 15:100.
+#' Da, Y. (2015) Multi-allelic haplotype model based on genetic partition for
+#' genomic prediction and variance component estimation using SNP markers.
+#' \emph{BMC Genetics} 16:144. \doi{10.1186/s12863-015-0301-1}
 #'
 #' @examples
 #' \dontrun{

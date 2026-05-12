@@ -637,7 +637,7 @@ evaluate_prediction <- function(gebv, y, h2 = NULL, tbv = NULL,
   result
 }
 
-#' Parse MH hap list into stacked hap1/hap2 matrices
+#' Parse multi-allelic hap list into stacked hap1/hap2 matrices
 #' @noRd
 .parse_mh_all_chr <- function(mh_list) {
   parsed <- lapply(seq_along(mh_list), function(k) {

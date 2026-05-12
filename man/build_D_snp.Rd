@@ -16,10 +16,22 @@ numeric matrix (n x n) of dominance relationships.
 }
 \description{
 Constructs the SNP dominance relationship matrix (D) following
-Da et al. (2015). Captures non-additive (dominance) genetic
+Da (2015). Captures non-additive (dominance) genetic
 relationships among individuals. Can be used alongside the additive
 G matrix in \code{masreml()} to partition genetic variance into
 additive and dominance components.
+}
+\details{
+\strong{SNP dominance GRM (Da, 2015).}
+For individual \eqn{i} at SNP \eqn{j} with allele frequency \eqn{p_j}
+and \eqn{q_j = 1 - p_j}, the dominance-coded value is:
+\describe{
+\item{Genotype \eqn{aa} (dosage = 0):}{\eqn{W_{D,ij} = -2p_j^2}}
+\item{Genotype \eqn{Aa} (dosage = 1):}{\eqn{W_{D,ij} = 2p_j q_j}}
+\item{Genotype \eqn{AA} (dosage = 2):}{\eqn{W_{D,ij} = -2q_j^2}}
+}
+The dominance GRM is then:
+\deqn{D = \frac{W_D W_D^\top}{\sum_j (2p_j q_j)^2}}
 }
 \examples{
 \dontrun{
@@ -33,8 +45,9 @@ round(summary(diag(D)), 3)
 
 }
 \references{
-Da et al. (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction
-and variance component estimation using SNP markers. \emph{BMC Genet.} 15:100.
+Da, Y. (2015) Multi-allelic haplotype model based on genetic partition for
+genomic prediction and variance component estimation using SNP markers.
+\emph{BMC Genetics} 16:144. \doi{10.1186/s12863-015-0301-1}
 }
 \seealso{
 \code{\link{build_G_snp}}, \code{\link{masreml}}

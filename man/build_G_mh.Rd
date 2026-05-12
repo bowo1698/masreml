@@ -39,11 +39,34 @@ relationships. Same interpretation as SNP additive G matrix but
 based on haplotype block diversity.
 }
 \description{
-Constructs the multi-allelic (MH) additive genomic relationship matrix
-(Wgh) following Da (2015). Uses multi-allelic haplotype block coding
-(W_ah) that captures haplotype diversity beyond what bi-allelic SNPs
-can represent. The resulting matrix can be used in \code{masreml()} or
-\code{gwablup()} via the \code{G} argument.
+Constructs the multi-allelic additive genomic relationship matrix
+following Da (2015). Uses multi-allelic haplotype block coding
+(\eqn{W_{ah}}) that captures haplotype diversity beyond what bi-allelic
+SNPs can represent. The resulting matrix can be used in \code{masreml()}
+or \code{gwablup()} via the \code{G} argument.
+}
+\details{
+\strong{Multi-allelic additive GRM (Da, 2015).}
+For individual \eqn{i} with phased alleles \eqn{(A_i, A_j)} at haplotype
+block \eqn{h}, the column corresponding to non-baseline allele \eqn{k}
+(with population frequency \eqn{p_k}) is coded as:
+\describe{
+\item{Homozygous (\eqn{A_i = A_j = k}):}{
+\eqn{W_{\alpha h}^{(k)} = -2(1 - p_k)}}
+\item{Heterozygous (\eqn{A_i = k} or \eqn{A_j = k}):}{
+\eqn{W_{\alpha h}^{(k)} = -(1 - 2p_k)}}
+\item{Absent (\eqn{A_i \neq k} and \eqn{A_j \neq k}):}{
+\eqn{W_{\alpha h}^{(k)} = 2p_k}}
+}
+Rare alleles receive larger absolute deviations; common alleles receive
+smaller deviations. The population column-mean is zero by construction,
+ensuring the additive effects sum to zero across individuals.
+
+The additive multi-allelic GRM is then:
+\deqn{A_{gh} = \frac{W_{ah} W_{ah}^\top}{k_{ah}}, \quad
+  k_{ah} = \frac{\mathrm{tr}(W_{ah} W_{ah}^\top)}{n}}
+where \eqn{n} is the number of individuals and \eqn{k_{ah}} scales the
+matrix so that diagonal elements average approximately 1.
 }
 \examples{
 \dontrun{
@@ -65,8 +88,9 @@ dim(G_mh_full)
 
 }
 \references{
-Da et al. (2015) Multi-allelic haplotype model based on genetic partition for genomic prediction
-and variance component estimation using SNP markers. \emph{BMC Genet.} 15:100.
+Da, Y. (2015) Multi-allelic haplotype model based on genetic partition for
+genomic prediction and variance component estimation using SNP markers.
+\emph{BMC Genetics} 16:144. \doi{10.1186/s12863-015-0301-1}
 }
 \seealso{
 \code{\link{build_G_snp}}, \code{\link{masreml}},

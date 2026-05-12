@@ -1,7 +1,8 @@
 #' Run GWAS for SNP or Microhaplotype Markers
 #'
 #' Performs genome-wide association study (GWAS) for SNP or microhaplotype
-#' (MH) markers. Uses EMMAX (Efficient Mixed-Model Association eXpedited)
+#' multi-allelic markers. Uses EMMAX (Efficient Mixed-Model Association
+#' eXpedited)
 #' to control for population structure and relatedness, preventing spurious
 #' associations. Results can be inspected for QTL detection or passed
 #' directly to \code{gwablup()} for GWAS-assisted genomic prediction.
@@ -43,7 +44,7 @@
 #'     \item \code{pp}: posterior probability of non-zero effect per
 #'       marker/block — use this as input to \code{gwablup()}
 #'     \item \code{marker_type}: \code{"snp"} or \code{"mh"}
-#'     \item \code{n_markers}: number of markers or MH blocks
+#'     \item \code{n_markers}: number of markers or multi-allelic blocks
 #'     \item \code{pi}: prior probability used
 #'     \item \code{window}: smoothing window size used
 #'   }
@@ -226,7 +227,7 @@ run_gwas <- function(
   stop("Cannot extract G_u: no marker data available.")
 }
 
-#' Prepare MH data untuk GWAS input
+#' Prepare multi-allelic data for GWAS input
 #' Returns W_αh flat matrix + block_sizes
 #' @noRd
 .prepare_mh_for_gwas <- function(mh_list, ids = NULL, ref_mh = NULL) {

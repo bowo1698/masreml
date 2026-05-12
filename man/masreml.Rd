@@ -42,7 +42,7 @@ haplotype allele codes per block (strand1, strand2, strand1, ...)
 \itemize{
 \item \code{snp_add}: numeric matrix (n x n), SNP additive G
 \item \code{snp_dom}: numeric matrix (n x n), SNP dominance D
-\item \code{mh_add}: numeric matrix (n x n), MH additive Agh
+\item \code{mh_add}: numeric matrix (n x n), multi-allelic additive Agh
 \item \code{pedigree}: numeric matrix (n x n), pedigree A
 }}
 
@@ -141,14 +141,29 @@ via Dempster-Falconer transformation
 }
 }
 \description{
-BLUP-based model for genomic prediction using SNP or microhaplotype (MH)
+BLUP-based model for genomic prediction using SNP or multi-allelic
 markers. Estimates variance components via REML and predicts genomic
 estimated breeding values (GEBV) via BLUP. Supports SNP additive,
-SNP dominance, and MH additive relationship matrices, for both
+SNP dominance, and multi-allelic additive relationship matrices, for both
 continuous and binary traits. For GWAS-assisted prediction, see
 \code{\link{run_gwas}} and \code{\link{gwablup}}.
 }
 \details{
+\strong{Statistical model.}
+The general mixed linear model is:
+\deqn{y = Xb + \sum_{k} Z_k u_k + e}
+with independent random genetic effects
+\eqn{u_k \sim \mathcal{N}(0,\,G_k \sigma_{g_k}^2)} and residuals
+\eqn{e \sim \mathcal{N}(0,\,I \sigma_e^2)}, where \eqn{G_k} is the
+genomic relationship matrix for component \eqn{k}
+(\code{snp_add}, \code{snp_dom}, \code{mh_add}, or \code{pedigree}).
+For a single additive microhaplotype component this reduces to:
+\deqn{y = Xb + Z a_h + e, \quad a_h \sim \mathcal{N}(0,\,A_{gh}\,\sigma_{a_h}^2)}
+where \eqn{A_{gh} = W_{ah} W_{ah}^\top / k_{ah}} and
+\eqn{k_{ah} = \mathrm{tr}(W_{ah} W_{ah}^\top) / n}
+(Da, 2015; see \code{\link{build_G_mh}}).
+Variance components are estimated by REML; GEBVs are obtained by BLUP.
+
 \strong{Auto-summary.} On completion, \code{masreml()} prints a brief
 banner mirroring \code{masbayes::run_bayesr()}/
 \code{masbayes::run_bayesa()}. Set \code{verbose = FALSE} to suppress.
@@ -170,7 +185,7 @@ y_binary <- as.integer(d$pheno$y_bin_qtl_snp); names(y_binary) <- d$pheno$id
 fit <- masreml(y = y, markers = list(snp_add = d$snp))
 summary(fit)
 
-# MH additive only (d$mh is auto-detected as a hap-block matrix)
+# multi-allelic additive only (d$mh is auto-detected as a hap-block matrix)
 fit <- masreml(y = y, markers = list(mh_add = d$mh))
 
 # Combined SNP additive + dominance

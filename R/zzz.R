@@ -1,4 +1,90 @@
-#' @keywords internal
+#' masreml: Universal REML-BLUP for SNP and Multi-allelic Genomic Prediction
+#'
+#' Implements REML-BLUP genomic prediction using SNP (additive, dominance)
+#' and multi-allelic additive markers via a high-performance Rust backend.
+#' Supports multiple genomic relationship matrices (GRM) simultaneously,
+#' binary traits via Laplace approximation, EMMAX GWAS, and GWAS-assisted
+#' prediction (GWABLUP).
+#'
+#' @section Statistical model:
+#' The general mixed linear model is:
+#' \deqn{y = Xb + \sum_{k} Z_k u_k + e}
+#' with independent random genetic effects
+#' \eqn{u_k \sim \mathcal{N}(0,\,G_k \sigma_{g_k}^2)} and residuals
+#' \eqn{e \sim \mathcal{N}(0,\,I\sigma_e^2)}, where \eqn{G_k} is the
+#' genomic relationship matrix for component \eqn{k}
+#' (\code{snp_add}, \code{snp_dom}, \code{mh_add}, or \code{pedigree}).
+#' Variance components
+#' \eqn{(\sigma_{g_1}^2, \ldots, \sigma_{g_K}^2,\,\sigma_e^2)} are
+#' estimated by REML; GEBVs are obtained by BLUP.
+#'
+#' @section General assumptions:
+#' \itemize{
+#'   \item Random genetic effects for each component are normally
+#'     distributed: \eqn{u_k \sim \mathcal{N}(0,\,G_k \sigma_{g_k}^2)}.
+#'   \item Residuals are independent:
+#'     \eqn{e \sim \mathcal{N}(0,\,I\sigma_e^2)}.
+#'   \item Different random-effect components
+#'     (\eqn{u_1, u_2, \ldots}) are mutually independent.
+#'   \item The GRM \eqn{G_k} captures realized genomic relationships;
+#'     diagonal elements average approximately 1.
+#'   \item For binary traits, a single-step Laplace approximation is
+#'     applied on the liability scale (logit or probit link).
+#' }
+#'
+#' @section How the model works (individual/population level):
+#' masreml estimates genetic merit at the \emph{individual level} using
+#' BLUPs derived from the mixed model, rather than directly estimating
+#' individual marker effects.
+#'
+#' Variance components \eqn{(\sigma_{g_k}^2, \sigma_e^2)} are first
+#' estimated by REML using one of four algorithms selectable via the
+#' \code{method} argument: AI-REML (default for continuous traits),
+#' HE regression (default for binary), EM-REML (stable fallback), or
+#' HI (HE-initialized AI). The GRM \eqn{G_k} is built from marker data
+#' via \code{\link{build_G_snp}} (VanRaden 2008),
+#' \code{\link{build_G_mh}} (Da 2015), or \code{\link{build_D_snp}}.
+#'
+#' GEBVs (BLUPs) are then obtained by solving the mixed model equations.
+#' For a single additive component the BLUP prediction is:
+#' \deqn{\hat{u} = \sigma_g^2\,G\,V^{-1}(y - X\hat{b}),
+#'   \quad V = G\sigma_g^2 + I\sigma_e^2}
+#' GEBVs represent the \emph{total genomic merit} of each individual,
+#' aggregating marker contributions through the GRM structure.
+#'
+#' @section Main functions:
+#' \describe{
+#'   \item{\code{\link{masreml}}}{REML-BLUP genomic prediction (main
+#'     entry point). Accepts raw marker data or pre-built G matrices.}
+#'   \item{\code{\link{build_G_snp}}}{SNP additive GRM (VanRaden 2008).}
+#'   \item{\code{\link{build_G_mh}}}{Multi-allelic additive GRM
+#'     (Da 2015).}
+#'   \item{\code{\link{build_D_snp}}}{SNP dominance GRM (Da 2015).}
+#'   \item{\code{\link{build_A_ped}}}{Pedigree numerator relationship
+#'     matrix (Henderson 1976).}
+#'   \item{\code{\link{run_gwas}}}{EMMAX genome-wide association study.}
+#'   \item{\code{\link{gwablup}}}{GWAS-assisted GBLUP via weighted G.}
+#'   \item{\code{\link{cv_masreml}}}{k-fold or leave-one-out
+#'     cross-validation.}
+#' }
+#'
+#' @section References:
+#' \itemize{
+#'   \item Meuwissen, T. H. E., Hayes, B. J., \& Goddard, M. E. (2001).
+#'     Prediction of total genetic value using genome-wide dense marker
+#'     maps. \emph{Genetics}, 157(4), 1819--1829.
+#'     \doi{10.1093/genetics/157.4.1819}
+#'   \item VanRaden, P. M. (2008). Efficient methods to compute genomic
+#'     predictions. \emph{Journal of Dairy Science}, 91(11), 4414--4423.
+#'     \doi{10.3168/jds.2007-0980}
+#'   \item Da, Y. (2015). Multi-allelic haplotype model based on genetic
+#'     partition for genomic prediction and variance component estimation
+#'     using SNP markers. \emph{BMC Genetics}, 16(1), 144.
+#'     \doi{10.1186/s12863-015-0301-1}
+#' }
+#'
+#' @author \strong{Maintainer}: Agus Wibowo \email{aguswibowo1698@@gmail.com}
+#'
 #' @useDynLib masreml, .registration = TRUE
 "_PACKAGE"
 

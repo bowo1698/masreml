@@ -59,14 +59,15 @@ Object of class \code{"gwas_result"} with elements:
 \item \code{pp}: posterior probability of non-zero effect per
 marker/block — use this as input to \code{gwablup()}
 \item \code{marker_type}: \code{"snp"} or \code{"mh"}
-\item \code{n_markers}: number of markers or MH blocks
+\item \code{n_markers}: number of markers or multi-allelic blocks
 \item \code{pi}: prior probability used
 \item \code{window}: smoothing window size used
 }
 }
 \description{
 Performs genome-wide association study (GWAS) for SNP or microhaplotype
-(MH) markers. Uses EMMAX (Efficient Mixed-Model Association eXpedited)
+multi-allelic markers. Uses EMMAX (Efficient Mixed-Model Association
+eXpedited)
 to control for population structure and relatedness, preventing spurious
 associations. Results can be inspected for QTL detection or passed
 directly to \code{gwablup()} for GWAS-assisted genomic prediction.

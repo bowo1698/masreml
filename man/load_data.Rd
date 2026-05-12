@@ -57,6 +57,20 @@ for small; effects drawn from \code{rnorm}, unit-normalised).}
 \item{\code{test_idx}}{Integer vector -- row indices for the test set.
 Length 40 (large) / 20 (small). Every test individual has its
 full-sibs in \code{train_idx}.}
+\item{\code{map_snp}}{Data frame with one row per SNP. Columns:
+\code{SNP} (matches \code{colnames(snp)}), \code{CHROM} (integer
+chromosome id, 1..5), \code{POS} (integer base-pair position).
+Synthetic 5-chromosome layout with 100 kb intra-chromosome spacing;
+deterministic, no RNG. Passes directly into GWAS / Manhattan-plot
+consumers (e.g. \pkg{CMplot}). Dimensions: 400 x 3 (large) /
+200 x 3 (small).}
+\item{\code{map_mh}}{Data frame with one row per microhaplotype block.
+Columns: \code{block_id} (matches \code{unique(attr(mh, "block_id"))}),
+\code{chr}, \code{start_pos}, \code{end_pos}, \code{n_snps}. Schema
+mirrors the \pkg{maspipeline} output
+\code{microhaplotype_coordinates.csv} so production pipelines can
+consume \code{d$map_mh} without translation. Dimensions: 80 x 5
+(large) / 40 x 5 (small).}
 }
 }
 \description{

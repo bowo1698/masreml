@@ -26,3 +26,7 @@ src/Makevars.win
 *.tar.gz
 *.tgz
 /check/
+
+# Local backups
+*.bak
+*.bak.*

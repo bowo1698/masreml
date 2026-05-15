@@ -17,8 +17,12 @@
 #   - BayesR (4-component mixture prior, variable selection)
 #   - BayesA (marker-specific variance, no variable selection)
 #   - GBLUP and GWABLUP
-#   x SNP (VanRaden 2008 coding)
-#   x Microhaplotype (Da 2015 W_ah coding via construct_wah_matrix)
+#   x SNP — z-score encoding via construct_snp_matrix(encoding="zscore"),
+#           paired with marker_type="snp" in the Bayesian fitters
+#           (v1.4.0 alternative biallelic-SNP convention).
+#   x Microhaplotype (Da 2015 W_ah coding via construct_wah_matrix);
+#           Bayesian fitters use the default marker_type = "auto" which
+#           resolves to "multiallelic" (no behavioural change vs <v1.4.0).
 #   x Continuous and binary trait
 #   x Train/test split (n_train=200, n_test=100)
 #
@@ -151,14 +155,28 @@ ref_struct  <- list(allele_info=wah_train$allele_info,
 W_mh_test  <- construct_wah_matrix(
   hap_block_all[idx_test,], colnames_block, NULL, ref_struct, TRUE)$W_ah
 
-p_snp_tr    <- colMeans(geno_snp_all[idx_train,]) / 2
-W_snp_train <- sweep(geno_snp_all[idx_train,], 2, 2*p_snp_tr, "-")
-W_snp_test  <- sweep(geno_snp_all[idx_test, ], 2, 2*p_snp_tr, "-")
+# SNP design matrix via masbayes::construct_snp_matrix() with the
+# z-score encoding introduced in v1.4.0. The training-set sd is reused
+# for the test and full-data builds so that all three matrices share
+# identical column statistics. This pairs with `marker_type = "snp"`
+# below to opt in to the alternative biallelic-SNP convention.
+snp_train_obj <- construct_snp_matrix(geno_snp_all[idx_train, ],
+                                      encoding = "zscore")
+W_snp_train   <- snp_train_obj$W
+p_snp_tr      <- snp_train_obj$freq
+sd_snp_tr     <- snp_train_obj$sd
+
+W_snp_test    <- construct_snp_matrix(geno_snp_all[idx_test, ],
+                                      encoding = "zscore",
+                                      ref_freq = p_snp_tr,
+                                      ref_sd   = sd_snp_tr)$W
+W_snp_all     <- construct_snp_matrix(geno_snp_all,
+                                      encoding = "zscore",
+                                      ref_freq = p_snp_tr,
+                                      ref_sd   = sd_snp_tr)$W
 storage.mode(W_snp_train) <- "double"
 storage.mode(W_snp_test)  <- "double"
-
-W_snp_all <- sweep(geno_snp_all, 2, 2*p_snp_tr, "-")
-storage.mode(W_snp_all) <- "double"
+storage.mode(W_snp_all)   <- "double"
 
 wah_all    <- construct_wah_matrix(
   hap_block_all, colnames_block, allele_freq_list, NULL, TRUE)
@@ -215,6 +233,8 @@ run_scenario <- function(sc, W_tr, W_te, y_tr, y_te, g_te,
   y_test  <- y_te
   resp    <- if (trait_type == "binary") "binary" else "gaussian"
 
+  mtype <- if (identical(marker_label, "SNP")) "snp" else "multiallelic"
+
   wtw <- colSums(W_tr^2)
   rows <- list()
 
@@ -227,6 +247,7 @@ run_scenario <- function(sc, W_tr, W_te, y_tr, y_te, g_te,
       if (model == "BayesR") {
         res <- run_bayesr(
           w=W_tr, y=y_train, wtw_diag=wtw,
+          marker_type   = mtype,
           pi_vec        = config$bayesr$pi_vec,
           sigma2_e_init = se_init,
           sigma2_ah     = sg_init,
@@ -242,6 +263,7 @@ run_scenario <- function(sc, W_tr, W_te, y_tr, y_te, g_te,
       } else {
         res <- run_bayesa(
           w=W_tr, y=y_train, wtw_diag=wtw,
+          marker_type   = mtype,
           nu            = config$bayesa$nu,
           sigma2_g      = sg_init,
           sigma2_e_init = se_init,
@@ -252,7 +274,7 @@ run_scenario <- function(sc, W_tr, W_te, y_tr, y_te, g_te,
           fold_id       = 0L)
       }
 
-      # Use the package's predict() S3 method instead of recomputing manually.
+      # Use the package's predict()
       # res$GEBV gives training GEBV; predict(res, W_te, y_test) auto-computes
       # observed-scale metrics (R2, RMSE, accuracy/AUC, bias = calibration slope)
       # plus pred_te$prob = pnorm(GEBV) for binary.

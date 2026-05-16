@@ -69,3 +69,22 @@ jobs:
           echo "PKG_CONFIG_PATH=$(brew --prefix openblas)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
           echo "LDFLAGS=-L$(brew --prefix openblas)/lib" >> "$GITHUB_ENV"
           echo "CPPFLAGS=-I$(brew --prefix openblas)/include" >> "$GITHUB_ENV"
+
+      - name: Install R dependencies
+        shell: Rscript {0}
+        run: |
+          install.packages("remotes")
+          remotes::install_deps(dependencies = TRUE)
+
+      - name: Setup rextendr
+        shell: Rscript {0}
+        run: |
+          install.packages("rextendr")
+          rextendr::rust_sitrep()
+
+      - name: Clean Rust target (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          rm -rf src/rust/target
+          rm -f src/rust/Cargo.lock

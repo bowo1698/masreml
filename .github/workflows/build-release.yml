@@ -1,0 +1,36 @@
+name: Build and release binary packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (R-${{ matrix.config.r }} - ${{ matrix.config.rust-target }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # Windows
+          - {os: windows-latest, r: 'release', rust-target: 'x86_64-pc-windows-gnu',    ext: 'zip',    arch: 'x64'}
+
+          # macOS — Intel runner builds x86_64, Apple Silicon runner builds aarch64
+          - {os: macos-13,       r: 'release', rust-target: 'x86_64-apple-darwin',      ext: 'tar.gz', arch: 'x64'}
+          - {os: macos-14,       r: 'release', rust-target: 'aarch64-apple-darwin',     ext: 'tar.gz', arch: 'arm64'}
+
+          # Linux
+          - {os: ubuntu-latest,  r: 'release', rust-target: 'x86_64-unknown-linux-gnu', ext: 'tar.gz', arch: 'x64'}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fix Git line endings (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git checkout .

@@ -15,8 +15,11 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          # Windows
-          - {os: windows-latest, r: 'release', rust-target: 'x86_64-pc-windows-gnu',    ext: 'zip',    arch: 'x64'}
+          # Windows: temporarily dropped for v0.3.1. openblas-src on Windows
+          # requires the `system` feature (not `static`), which needs MSYS2 +
+          # pkg-config setup and Makevars.win.in changes. Plan to revisit for
+          # v0.3.2. Users install via devtools::install_github() meanwhile.
+          # - {os: windows-latest, r: 'release', rust-target: 'x86_64-pc-windows-gnu',    ext: 'zip',    arch: 'x64'}
 
           # macOS — Apple Silicon only (Intel x86_64 dropped: macos-13 deprecation + long queue waits)
           - {os: macos-14,       r: 'release', rust-target: 'aarch64-apple-darwin',     ext: 'tar.gz', arch: 'arm64'}

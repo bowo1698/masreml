@@ -30,3 +30,6 @@ src/Makevars.win
 # Local backups
 *.bak
 *.bak.*
+
+# Local-only GitHub release notes drafts
+RELEASE_NOTES_*.txt

@@ -86,8 +86,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          # Preserve Cargo.lock to keep openblas-build pinned at 0.10.15.
+          # 0.10.16 has an upstream TLS-feature bug with ureq v3 that breaks
+          # the openblas-static build path on Windows.
           rm -rf src/rust/target
-          rm -f src/rust/Cargo.lock
 
       - name: Build binary package
         shell: bash

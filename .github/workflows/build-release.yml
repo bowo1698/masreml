@@ -88,3 +88,21 @@ jobs:
         run: |
           rm -rf src/rust/target
           rm -f src/rust/Cargo.lock
+
+      - name: Build binary package
+        shell: bash
+        run: |
+          mkdir -p tmp_lib
+          R CMD INSTALL . --library=tmp_lib || exit 1
+
+          # Strip source / build artefacts from the binary
+          rm -rf tmp_lib/masreml/src/
+          rm -f tmp_lib/masreml/Makevars*
+
+          EXT="${{ matrix.config.ext }}"
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            (cd tmp_lib && zip -r "../masreml_binary.${EXT}" masreml/)
+          else
+            (cd tmp_lib && tar -czf "../masreml_binary.${EXT}" masreml/)
+          fi
+          ls -lh "masreml_binary.${EXT}"

@@ -110,10 +110,11 @@ Full tutorials (GP + GWAS, SNP + MH, continuous + binary):
 
 ```bibtex
 @software{masreml,
-  author = {Agus Wibowo},
-  title  = {masreml: REML-BLUP genomic prediction for biallelic SNP and multi-allelic markers},
-  year   = {2025},
-  url    = {https://github.com/bowo1698/masreml}
+  author = {Wibowo, Agus},
+  title = {masreml: REML-BLUP, GWAS, and GWABLUP for biallelic SNP and multi-allelic markers},
+  url = {https://github.com/bowo1698/masreml},
+  doi = {https://doi.org/10.5281/zenodo.20221889},
+  year = {2026}
 }
 ```
 

@@ -130,3 +130,18 @@ jobs:
           cat(sprintf("SMOKE OK on %s: n=%d h2=%.3f\n",
                       R.version$platform, fit$n,
                       fit$varcomp$h2[["snp_add"]]))
+
+      - name: Rename for upload
+        id: rename_step
+        shell: bash
+        run: |
+          FILE="masreml_binary.${{ matrix.config.ext }}"
+          NEW_NAME="masreml_${{ matrix.config.arch }}_${{ matrix.config.rust-target }}.${{ matrix.config.ext }}"
+          mv "$FILE" "$NEW_NAME"
+          echo "pkg_file=$NEW_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.config.os }}-${{ matrix.config.rust-target }}
+          path: ${{ steps.rename_step.outputs.pkg_file }}

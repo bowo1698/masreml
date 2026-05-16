@@ -4,10 +4,10 @@
 \alias{load_data}
 \title{Load the bundled demo dataset}
 \usage{
-load_data(size = c("large", "small"))
+load_data(size = c("small", "large"))
 }
 \arguments{
-\item{size}{character, either \code{"large"} (default) or \code{"small"}.}
+\item{size}{character, either \code{"small"} (default) or \code{"large"}.}
 }
 \value{
 A list with the following elements (dimensions shown for
@@ -17,14 +17,14 @@ A list with the following elements (dimensions shown for
 dosages (values \code{0/1/2}). Rownames are individual IDs
 \code{IND001..INDn}; colnames are \code{SNP001..SNPp}. Passes
 directly into \code{\link{masreml}(markers = list(snp_add = snp))}
-and \code{\link{build_G_snp}()}. Dimensions: 200 x 100 (large) /
+and \code{\link{build_G_snp}()}. Dimensions: 200 x 500 (large) /
 100 x 50 (small).}
 \item{\code{mh}}{Integer matrix \eqn{n \times (2 \cdot n_{blocks})} of
 microhaplotype allele codes. Columns alternate strand 1 / strand 2
 per block. The \code{attr(mh, "block_id")} attribute maps each column
 to its block. Consumable directly by
 \code{\link{build_G_mh}(mh_list = mh)} via the haplotype-matrix
-auto-detection path. Dimensions: 200 x 100 with 50 blocks (large) /
+auto-detection path. Dimensions: 200 x 500 with 250 blocks (large) /
 100 x 50 with 25 blocks (small).}
 \item{\code{allele_freq}}{List with parallel vectors
 \code{haplotype}, \code{allele}, \code{freq} -- the training-style
@@ -43,7 +43,7 @@ offspring with their sire/dam recorded. Passes directly into
 \code{\link{build_A_ped}()}. Columns: \code{id}, \code{sire},
 \code{dam}.}
 \item{\code{qtl}}{List with \code{snp_idx}, \code{mh_idx},
-\code{effects_snp}, \code{effects_mh} (each length 10 for large, 5
+\code{effects_snp}, \code{effects_mh} (each length 20 for large, 5
 for small; effects drawn from \code{rnorm}, unit-normalised).}
 \item{\code{meta}}{List with \code{n}, \code{n_snp}, \code{n_blocks},
 \code{n_snp_per_block}, \code{n_qtl}, \code{n_families},
@@ -62,14 +62,14 @@ full-sibs in \code{train_idx}.}
 chromosome id, 1..5), \code{POS} (integer base-pair position).
 Synthetic 5-chromosome layout with 100 kb intra-chromosome spacing;
 deterministic, no RNG. Passes directly into GWAS / Manhattan-plot
-consumers (e.g. \pkg{CMplot}). Dimensions: 100 x 3 (large) /
+consumers (e.g. \pkg{CMplot}). Dimensions: 500 x 3 (large) /
 50 x 3 (small).}
 \item{\code{map_mh}}{Data frame with one row per microhaplotype block.
 Columns: \code{block_id} (matches \code{unique(attr(mh, "block_id"))}),
 \code{chr}, \code{start_pos}, \code{end_pos}, \code{n_snps}. Schema
 mirrors the \pkg{maspipeline} output
 \code{microhaplotype_coordinates.csv} so production pipelines can
-consume \code{d$map_mh} without translation. Dimensions: 50 x 5
+consume \code{d$map_mh} without translation. Dimensions: 250 x 5
 (large) / 25 x 5 (small).}
 }
 }
@@ -78,9 +78,9 @@ Returns a small, deterministic genomic dataset bundled with the package,
 intended for examples, vignettes, and tests.
 }
 \details{
-Two scales are bundled: \code{size = "large"} (default; n=200, p=100,
-n_qtl=10) and \code{size = "small"} (n=100, p=50, n_qtl=5) that run
-during \code{R CMD check --examples}.
+Two scales are bundled: \code{size = "large"} (n=200, p=500,
+n_qtl=20) and \code{size = "small"} (default; n=100, p=50, n_qtl=5) that
+runs during \code{R CMD check --examples}.
 Both have the same family structure (10 full-sib families) and the
 same 12-field shape, so consumer code does not have to branch on size.
 

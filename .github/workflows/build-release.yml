@@ -18,8 +18,7 @@ jobs:
           # Windows
           - {os: windows-latest, r: 'release', rust-target: 'x86_64-pc-windows-gnu',    ext: 'zip',    arch: 'x64'}
 
-          # macOS — Intel runner builds x86_64, Apple Silicon runner builds aarch64
-          - {os: macos-13,       r: 'release', rust-target: 'x86_64-apple-darwin',      ext: 'tar.gz', arch: 'x64'}
+          # macOS — Apple Silicon only (Intel x86_64 dropped: macos-13 deprecation + long queue waits)
           - {os: macos-14,       r: 'release', rust-target: 'aarch64-apple-darwin',     ext: 'tar.gz', arch: 'arm64'}
 
           # Linux

@@ -1,5 +1,35 @@
 // src/rust/src/gwas/smoother.rs
 
+//! Local moving-average smoother for GWAS likelihood-ratio statistics.
+//!
+//! Produces the per-marker weights $d_j$ used to construct the
+//! GWAS-weighted relationship matrix $G_{wa}$ in
+//! [`crate::matrix::snp_additive`] and [`crate::matrix::mh_additive`].
+//!
+//! ## Smoother
+//!
+//! ```text
+//! d_j = mean( LR[j - w/2 : j + w/2] )
+//! ```
+//!
+//! with a centred window of size `window` (caller-specified). At chromosome
+//! / array edges the window is shrunk rather than padded — no edge
+//! artefacts from zero-padding.
+//!
+//! ## Why smooth?
+//!
+//! Per-SNP LR statistics are noisy; smoothing averages signal over a local
+//! LD neighbourhood so that markers in linkage with a causal variant
+//! share its weight contribution. The result is a less variable
+//! $G_{wa}$ that still up-weights regions of true association without
+//! over-fitting to single-SNP noise.
+//!
+//! ## Choice of window
+//!
+//! Typical values are 5–20 SNPs (or microhaplotype blocks) depending on
+//! marker density and local LD; the R-side wrapper exposes this as a
+//! `window` argument with default 5.
+
 use super::{GwasError, StdResult};
 
 /// Moving average of LR values over a window of SNPs/blocks

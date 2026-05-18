@@ -1,3 +1,41 @@
+//! Expectation-Maximization REML (EM-REML).
+//!
+//! Multiplicative variance-component update of Dempster et al. (1977) and
+//! Meyer (1989):
+//!
+//! ```text
+//! σ²_i⁽ᵗ⁺¹⁾ = σ²_i⁽ᵗ⁾² / n_i · ( y'P G_i P y + tr(G_i · C_ii) )
+//! σ²_e⁽ᵗ⁺¹⁾ = σ²_e⁽ᵗ⁾² / n · ( y'PPy + tr(C_ee) )
+//! ```
+//!
+//! Each update is a ratio of non-negative quantities, so $\sigma^2 \ge 0$
+//! is preserved automatically — no constraint handling needed. The price
+//! is linear (not super-linear) convergence; EM typically needs 10–100×
+//! more iterations than AI to reach the same tolerance.
+//!
+//! ## When to use
+//!
+//! - Always non-negative — preferred when AI returns negative components
+//!   or stalls.
+//! - As the fallback path in [`super::adaptive`] when AI fails.
+//! - For verification — running EM to convergence and comparing with AI
+//!   confirms both are at the same optimum.
+//!
+//! ## Performance
+//!
+//! Each iteration computes $Py$ and $P G_i P y$, which dominates the
+//! runtime; the helpers in [`crate::utils::linalg`] amortise the
+//! Cholesky factorisation of $V$ across all components.
+//!
+//! ## References
+//!
+//! - Dempster, A. P., Laird, N. M. & Rubin, D. B. (1977). Maximum
+//!   likelihood from incomplete data via the EM algorithm. *J. R. Stat.
+//!   Soc. B*, 39:1–38.
+//! - Meyer, K. (1989). Restricted maximum likelihood to estimate variance
+//!   components for animal models with several random effects using a
+//!   derivative-free algorithm. *Genet. Sel. Evol.*, 21:317–340.
+
 use ndarray::{Array1, Array2};
 
 use super::{RemlData, RemlError, VarianceComponents, StdResult};

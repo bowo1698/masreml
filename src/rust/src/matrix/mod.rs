@@ -1,3 +1,22 @@
+//! Relationship-matrix construction.
+//!
+//! Each submodule produces a positive semi-definite $G$ (or $A$ for
+//! pedigree) matrix that can be combined in a multi-component mixed model
+//! by the [`crate::reml`] kernels.
+//!
+//! Shared infrastructure:
+//!
+//! - [`GMatrix`] — owned $n \times n$ matrix wrapper used as the common
+//!   return type so REML can iterate over heterogeneous components.
+//! - [`compute_k`] — computes $\mathrm{tr}(WW^\top)/n$ directly from $W$
+//!   without forming $WW^\top$, the scaling constant for normalising
+//!   marker-based $G$ matrices.
+//! - [`validate_w`] — defensive checks (non-empty, finite values) before
+//!   building $G$; returns a structured `MatrixError` for upstream R-side
+//!   error reporting.
+//! - [`MatrixError`] — error enum bridged to `extendr_api::Error` so R
+//!   surfaces a clean error message instead of a Rust panic.
+
 pub mod snp_additive;
 pub mod snp_dominance;
 pub mod mh_additive;

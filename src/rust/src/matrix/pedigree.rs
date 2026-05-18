@@ -1,3 +1,36 @@
+//! Pedigree-based numerator relationship matrix $A$ (Henderson 1976).
+//!
+//! Builds the $n \times n$ expected relationship matrix from a recoded
+//! pedigree using Henderson's recursive formula:
+//!
+//! ```text
+//! a_ii = 1 + F_i,              F_i = 0.5 · a[sire_i, dam_i]
+//! a_ij = 0.5 · (a[i, sire_j] + a[i, dam_j])   for i < j
+//! ```
+//!
+//! Founders (sire = dam = 0) contribute $a_{ii} = 1$ and zero off-diagonals
+//! to ancestors not in the recoded pedigree.
+//!
+//! ## Input format
+//!
+//! Animals must be **topologically pre-sorted** so that any parent appears
+//! before its offspring. Sire and dam indices use 0 for unknown parent;
+//! all other indices are 1-based references into the same pedigree array.
+//! Validation of this ordering is the caller's responsibility — the
+//! recursion silently produces wrong results if the order is violated.
+//!
+//! ## Memory
+//!
+//! The full $A$ matrix is dense $n \times n$ (the recursion does not
+//! exploit sparsity). For large pedigrees, consider $A^{-1}$ sparse forms
+//! (Quaas, 1976) — not implemented here but a natural extension.
+//!
+//! ## Reference
+//!
+//! Henderson, C. R. (1976). A simple method for computing the inverse of
+//! a numerator relationship matrix used in prediction of breeding values.
+//! *Biometrics*, 32:69–83.
+
 use extendr_api::prelude::*;
 use ndarray::Array2;
 

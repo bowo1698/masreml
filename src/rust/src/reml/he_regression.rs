@@ -1,3 +1,40 @@
+//! Haseman–Elston regression for variance-component estimation.
+//!
+//! ## Model
+//!
+//! Given adjusted phenotypes $\hat{y}_i$ (residuals from fixed effects),
+//! HE regresses pairwise products on entries of the relationship matrices:
+//!
+//! ```text
+//! ŷ_i · ŷ_j = μ + Σ_k K_k[i,j] · h²_k + e_ij
+//! ```
+//!
+//! where $K_k$ is the $k$-th relationship matrix (additive G, dominance D,
+//! pedigree A, etc.) and $h^2_k$ is the corresponding heritability
+//! component. The off-diagonal regression is closed form (one OLS solve)
+//! and yields unbiased starting values for AI/EM-REML.
+//!
+//! ## When to use
+//!
+//! - **Starting values** for AI / EM iterations (default in
+//!   [`super::adaptive`]).
+//! - **Quick check** on a new dataset to see whether the variance
+//!   structure is identifiable before committing to slow iterative REML.
+//! - **Sanity baseline** when AI/EM produce suspicious estimates.
+//!
+//! ## Limitations
+//!
+//! HE assumes the residuals are well-modelled by additive variance
+//! components, and the closed-form OLS step does not account for
+//! correlation between pairwise products. The resulting estimates are
+//! consistent but inefficient (higher variance than ML/REML).
+//!
+//! ## Numerical details
+//!
+//! Pairwise products are accumulated in parallel via rayon. The
+//! `compute_reml_loglik` helper exported from this module is reused by
+//! AI-REML and EM-REML for convergence monitoring.
+
 use ndarray::{Array1, Array2};
 use ndarray_linalg::Solve;
 use rayon::prelude::*;

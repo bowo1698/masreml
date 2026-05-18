@@ -1,4 +1,43 @@
 //masreml/src/rust/src/matrix/mh_additive.rs
+
+//! Multi-allelic additive relationship matrix $G_{\alpha h}$ (Da, 2015).
+//!
+//! Builds the $n \times n$ additive G matrix from phased microhaplotype
+//! data, locus by locus:
+//!
+//! 1. Compute training-set allele frequencies $p_k$ per locus.
+//! 2. Choose the most frequent microhaplotype as the baseline and drop it
+//!    from the design matrix (identifiability constraint).
+//! 3. Encode the remaining $h - 1$ microhaplotypes with the Da (2015)
+//!    three-value rule into a per-locus $W_l$ matrix.
+//! 4. Apply the per-locus
+//!    [`frequency_weighted_row_shrinkage`] — see its docstring for the
+//!    precise definition; identical to the equivalent step in `masbayes`.
+//! 5. Optionally scale each locus by `sqrt(weight_l)` for GWABLUP.
+//! 6. Accumulate $G_{\alpha h} = \sum_l W_l W_l^\top$ and the scaling
+//!    constant $k_{\alpha h} = \mathrm{tr}(G_{\alpha h}) / n$, returning
+//!    the normalised matrix $G_{\alpha h} / k_{\alpha h}$.
+//!
+//! ## Train / test alignment
+//!
+//! Allele frequencies and baseline microhaplotypes are taken from the
+//! reference (training) data when `ref_hap1` / `ref_hap2` are supplied;
+//! otherwise they are computed from the data being encoded. Always pass
+//! training references when encoding a test set — see the discussion in
+//! [`crate::matrix::snp_additive`] for the analogous SNP case.
+//!
+//! ## Parallelism
+//!
+//! Locus-level $W_l$ encoding is parallelised over individuals via rayon.
+//! The outer loop over loci is sequential because each locus accumulates
+//! into the shared $G$ matrix.
+//!
+//! ## Reference
+//!
+//! Da, Y. (2015). Multi-allelic haplotype model based on genetic partition
+//! for genomic prediction and variance component estimation using SNP
+//! markers. *BMC Genetics*, 16:144.
+
 use extendr_api::prelude::*;
 use ndarray::{Array1, Array2};
 use rayon::prelude::*;
@@ -386,4 +425,100 @@ pub fn build_w_mh_internal(
     }
 
     Ok((w_mh, block_sizes))
+}
+
+// ============================================================================
+// Unit tests
+// ============================================================================
+//
+// Deterministic checks for the Da (2015) encoding and the
+// frequency-weighted row shrinkage step. Run with `cargo test` or compile-
+// verify with `cargo check --tests`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn shrinkage_preserves_dimensions() {
+        let mut w = array![
+            [1.0, 2.0, 3.0],
+            [0.5, -1.0, 2.5],
+        ];
+        let freqs = [0.4_f64, 0.3, 0.2];
+        frequency_weighted_row_shrinkage(&mut w, &freqs);
+        assert_eq!(w.nrows(), 2);
+        assert_eq!(w.ncols(), 3);
+    }
+
+    #[test]
+    fn shrinkage_partial_damping_factor() {
+        // Verify that the post-shrink p-weighted row sum equals
+        // S · (1 - Q/F) where Q = Σ p_l², F = Σ p_l.
+        let p = [0.3_f64, 0.2];
+        let mut w = array![[1.0, 2.0]];
+
+        let s_before: f64 = p.iter().zip(w.row(0).iter()).map(|(pl, wl)| pl * wl).sum();
+        frequency_weighted_row_shrinkage(&mut w, &p);
+        let s_after: f64 = p.iter().zip(w.row(0).iter()).map(|(pl, wl)| pl * wl).sum();
+
+        let q: f64 = p.iter().map(|x| x * x).sum();
+        let f: f64 = p.iter().sum();
+        let expected = s_before * (1.0 - q / f);
+        assert!((s_after - expected).abs() < 1e-10,
+            "expected weighted sum {} after shrinkage, got {}", expected, s_after);
+    }
+
+    #[test]
+    fn shrinkage_skips_zero_frequency_block() {
+        // freq_sum < 1e-10 short-circuits, leaving W untouched.
+        let mut w = array![[1.0, 2.0]];
+        let original = w.clone();
+        let freqs = [0.0_f64, 0.0];
+        frequency_weighted_row_shrinkage(&mut w, &freqs);
+        assert_eq!(w, original);
+    }
+
+    #[test]
+    fn code_w_mh_da_encoding_three_classes() {
+        // Single locus, h = 3 alleles, baseline (most frequent) dropped.
+        // Frequencies: [0.5, 0.3, 0.2], baseline = allele 0 (drop_idx = 0).
+        // After drop, columns correspond to allele indices 1, 2.
+        let p = vec![0.5_f64, 0.3, 0.2];
+        let drop_idx = 0_usize;
+
+        // Four individuals exercising the three Da genotype classes:
+        //   ind 0: (0, 0) — homozygous baseline, both non-baseline absent
+        //   ind 1: (1, 1) — homozygous allele 1
+        //   ind 2: (0, 1) — heterozygous, one copy of allele 1
+        //   ind 3: (1, 2) — heterozygous, one of allele 1 and one of allele 2
+        let h1 = Array1::from_vec(vec![0, 1, 0, 1]);
+        let h2 = Array1::from_vec(vec![0, 1, 1, 2]);
+
+        let w = code_w_mh(&h1, &h2, &p, drop_idx);
+        assert_eq!(w.nrows(), 4);
+        assert_eq!(w.ncols(), 2);  // p.len() − 1
+
+        // Expected values from Eqs. 22-24 (no shrinkage yet at this layer).
+        // Allele 1 column (p_1 = 0.3):
+        //   ind 0 (absent):       2 · 0.3 = 0.6
+        //   ind 1 (homozygous):  -2 · (1 - 0.3) = -1.4
+        //   ind 2 (one copy):    -(1 - 2 · 0.3) = -0.4
+        //   ind 3 (one copy):    -(1 - 2 · 0.3) = -0.4
+        assert!((w[[0, 0]] -  0.6).abs() < 1e-12);
+        assert!((w[[1, 0]] - -1.4).abs() < 1e-12);
+        assert!((w[[2, 0]] - -0.4).abs() < 1e-12);
+        assert!((w[[3, 0]] - -0.4).abs() < 1e-12);
+
+        // Allele 2 column (p_2 = 0.2):
+        //   ind 0 (absent):       2 · 0.2 = 0.4
+        //   ind 1 (absent):       2 · 0.2 = 0.4
+        //   ind 2 (absent):       2 · 0.2 = 0.4
+        //   ind 3 (one copy):    -(1 - 2 · 0.2) = -0.6
+        assert!((w[[0, 1]] -  0.4).abs() < 1e-12);
+        assert!((w[[1, 1]] -  0.4).abs() < 1e-12);
+        assert!((w[[2, 1]] -  0.4).abs() < 1e-12);
+        assert!((w[[3, 1]] - -0.6).abs() < 1e-12);
+    }
 }

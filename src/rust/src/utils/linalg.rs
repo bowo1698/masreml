@@ -1,4 +1,26 @@
-/// src/utils/linalg.rs
+// src/utils/linalg.rs
+
+//! Shared linear algebra primitives.
+//!
+//! Thin wrappers around `ndarray_linalg` LAPACK bindings plus a few
+//! REML-specific helpers that appear in more than one place:
+//!
+//! - `solve_matrix(V, B)` — solve $V X = B$ for matrix $B$ via LU/Cholesky
+//!   under the hood; returns a `MatrixError` on failure so REML can
+//!   classify the cause (singular $V$, dimension mismatch, etc.).
+//! - `compute_py(V, X, y)` — compute $Py$ where
+//!   $P = V^{-1} - V^{-1} X (X' V^{-1} X)^{-1} X' V^{-1}$, the projection
+//!   used inside HE, AI, and EM-REML scoring functions.
+//! - `log_det_cholesky(L)` — log-determinant via Cholesky factor, used to
+//!   evaluate the REML log-likelihood.
+//! - `set_num_threads(n)` — global rayon thread-pool configuration. Called
+//!   once at the top of [`crate::reml::adaptive`] so all parallel sections
+//!   honour the same thread count.
+//!
+//! Functions are deliberately small and unit-testable in isolation; they
+//! exist here rather than inlined into their callers so all REML
+//! algorithms share the same numerically tested implementations.
+
 use ndarray::{Array1, Array2};
 use ndarray_linalg::Solve;
 use rayon::ThreadPoolBuilder;

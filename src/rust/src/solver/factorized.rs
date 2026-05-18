@@ -1,4 +1,27 @@
 // src/rust/src/solver/factorized.rs
+
+//! Cached Cholesky factorisation of $V$.
+//!
+//! Many downstream operations need to solve $V x = b$ with the same $V$
+//! but many different $b$:
+//!
+//! - [`super::cholesky`] — one solve per right-hand side for EBV.
+//! - [`crate::gwas::emmax`] — one solve per marker for the per-SNP Wald
+//!   statistic.
+//!
+//! [`FactorizedV`] packages the Cholesky factor of
+//! $V = \sum_i G_i \sigma^2_i + I \sigma^2_e$ together with the dependent
+//! quantities (factor of $X' V^{-1} X$, residual projection) that all
+//! consumers need. Computing them once and passing the handle around
+//! eliminates redundant factorisation work.
+//!
+//! ## Lifetime / mutability
+//!
+//! `FactorizedV` is constructed from owned matrices (it stores its own
+//! Cholesky factors). It is `&self`-immutable on consumption, so multiple
+//! threads can call `solve(...)` concurrently — needed by the parallel
+//! per-marker loop in EMMAX.
+
 use ndarray::{Array1, Array2};
 use ndarray_linalg::{Solve, UPLO, Diag};
 use ndarray_linalg::Cholesky;

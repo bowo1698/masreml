@@ -1,3 +1,30 @@
+//! Preconditioned Conjugate Gradient (PCG) solver.
+//!
+//! Iterative solver for the mixed-model equations $V x = b$ that avoids
+//! forming or factoring $V$ explicitly. Recommended for $n \ge 10{,}000$
+//! where the $O(n^2)$ memory cost of [`super::cholesky`] becomes
+//! prohibitive.
+//!
+//! ## Algorithm
+//!
+//! Standard PCG with the diagonal of $V$ as preconditioner (Jacobi).
+//! Iteration stops when the relative residual $\|r_k\| / \|b\|$ falls
+//! below `tol` (default 1e-8) or when `max_iter` is reached.
+//!
+//! ## When to use vs. Cholesky
+//!
+//! - $n < 10{,}000$ → Cholesky is faster (one factorisation, then
+//!   triangular solves).
+//! - $n \ge 10{,}000$ → PCG scales as $O(n^2)$ per iteration via the
+//!   $G$ matrix-vector products, never materialising $V^{-1}$.
+//! - Very ill-conditioned $V$ → PCG may need many iterations; consider
+//!   tighter convergence thresholds or scaling $G$ before passing in.
+//!
+//! ## Output
+//!
+//! Same [`BlupResult`] shape as [`super::cholesky`], with `solver =
+//! "pcg"` and `n_iter` set to the actual iteration count for diagnostics.
+
 use extendr_api::prelude::*;
 use ndarray::{Array1, Array2};
 use ndarray_linalg::{Cholesky, UPLO, Solve};

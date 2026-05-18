@@ -1,3 +1,36 @@
+//! Variance-component estimation via REML.
+//!
+//! Implements three REML algorithms and an adaptive dispatcher:
+//!
+//! - [`he_regression`] — Haseman–Elston regression on phenotype products.
+//!   Closed-form, single-shot, used for starting values and sanity checks.
+//! - [`ai_reml`] — Average-Information REML (Johnson & Thompson, 1995).
+//!   Newton-style updates with the AI matrix; fast but can diverge or hit
+//!   negative variances on ill-conditioned problems.
+//! - [`em_reml`] — Expectation-Maximization REML (Dempster et al., 1977;
+//!   Meyer, 1989). Always produces non-negative variance components but
+//!   converges slowly.
+//! - [`adaptive`] — auto-selector that runs HE first for starting values,
+//!   tries AI, and falls back to EM if AI fails to converge or produces
+//!   negative components.
+//!
+//! ## Common interfaces
+//!
+//! - [`RemlData`] — bundles the response, fixed-effect design $X$, and the
+//!   list of random-effect $G$ matrices. Constructed once by the
+//!   adaptive entry point.
+//! - [`VarianceComponents`] — return type containing $\sigma^2$ per
+//!   component plus convergence diagnostics (iterations, log-likelihood).
+//! - [`RemlError`] — structured error type bridged to
+//!   `extendr_api::Error` for clean R-side reporting.
+//!
+//! ## Numerical infrastructure
+//!
+//! Inversion of the working matrix $V = \sum_i G_i \sigma^2_i + I \sigma^2_e$
+//! is delegated to [`crate::utils::linalg`] helpers, which use
+//! `ndarray_linalg` LAPACK bindings. Threading is controlled by
+//! `set_num_threads` from the same module.
+
 pub mod he_regression;
 pub mod ai_reml;
 pub mod em_reml;

@@ -1,5 +1,27 @@
 // src/rust/src/gwas/mod.rs
 
+//! Single-marker association testing.
+//!
+//! Two algorithms with complementary roles in the GWABLUP pipeline:
+//!
+//! - [`emmax`] — EMMAX (Kang et al., 2010). Per-marker mixed-model
+//!   association test that reuses a single pre-factorised $V$ across all
+//!   markers, giving GWAS-quality $p$-values at a fraction of the per-SNP
+//!   REML cost.
+//! - [`smoother`] — moving-average smoother for likelihood-ratio
+//!   statistics across adjacent markers/blocks, used to construct the
+//!   GWAS-weighted $G$ matrix (`G_wa`) in [`crate::matrix::snp_additive`]
+//!   and [`crate::matrix::mh_additive`].
+//!
+//! ## Output convention
+//!
+//! [`GwasResult`] uses per-marker (SNP) or per-block (MH) aggregated
+//! statistics: LR test statistic, effect estimate $\hat\beta$, standard
+//! error, and $p$-value. For multi-allelic MH blocks, $\hat\beta$ and SE
+//! are aggregated across alleles within a block, and the $p$-value uses
+//! a chi-squared with $\mathrm{df} = h - 1$ (number of non-baseline
+//! microhaplotypes).
+
 pub mod emmax;
 pub mod smoother;
 

@@ -1,4 +1,43 @@
-/// src/reml/ai_reml.rs
+// src/reml/ai_reml.rs
+
+//! Average-Information REML (AI-REML).
+//!
+//! Implements the Newton-style update of Johnson & Thompson (1995):
+//!
+//! ```text
+//! σ²⁽ᵗ⁺¹⁾ = σ²⁽ᵗ⁾ + AI⁻¹ · score
+//! ```
+//!
+//! where the score and AI matrix are computed from $P = V^{-1} -
+//! V^{-1}X(X'V^{-1}X)^{-1}X'V^{-1}$ applied to the response. AI averages
+//! the observed and expected information matrices, which tends to be
+//! better-conditioned than either alone and converges at a near-Newton
+//! rate close to the optimum.
+//!
+//! ## Algorithm
+//!
+//! 1. Initialise $\sigma^2$ from HE (or user-supplied values).
+//! 2. Compute $V$, factor it once via Cholesky.
+//! 3. Compute $P y$ and the AI matrix.
+//! 4. Solve $\Delta = AI^{-1} \cdot \mathrm{score}$ and update $\sigma^2$.
+//! 5. Iterate until $\|\Delta\| < \mathrm{tol}$ or `max_iter`.
+//!
+//! ## When AI fails
+//!
+//! - Variance components heading negative — AI does not enforce
+//!   non-negativity; the [`super::adaptive`] dispatcher catches this and
+//!   falls back to EM.
+//! - Singular AI matrix — happens when components are non-identifiable.
+//! - Slow convergence with badly scaled $G$ matrices — sometimes solved
+//!   by scaling $G$ to have $\mathrm{tr}(G)/n = 1$ before passing in.
+//!
+//! ## Reference
+//!
+//! Johnson, D. L. & Thompson, R. (1995). Restricted maximum likelihood
+//! estimation of variance components for univariate animal models using
+//! sparse matrix techniques and average information. *J. Dairy Sci.*,
+//! 78:449–456.
+
 use ndarray::{Array1, Array2};
 use ndarray_linalg::Solve;
 

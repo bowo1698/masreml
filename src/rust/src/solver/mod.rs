@@ -1,3 +1,29 @@
+//! EBV/BLUP solvers given fitted variance components.
+//!
+//! Given $V = \sum_i G_i \sigma^2_i + I \sigma^2_e$ from
+//! [`crate::reml`], these submodules solve the mixed-model equations to
+//! produce estimated breeding values (EBVs) and fixed-effect estimates.
+//!
+//! ## Available solvers
+//!
+//! - [`cholesky`] — direct Cholesky factorisation of $V$. Wraps
+//!   [`factorized::FactorizedV`] for reuse across multiple right-hand
+//!   sides. Default for $n < 10{,}000$.
+//! - [`pcg`] — preconditioned conjugate gradient. Avoids forming
+//!   $V^{-1}$ explicitly; the diagonal of $V$ serves as the
+//!   preconditioner. Default for $n \ge 10{,}000$.
+//! - [`factorized`] — shared Cholesky cache used by `cholesky` and
+//!   re-exported to [`crate::gwas::emmax`] so EMMAX does not re-factor
+//!   $V$ per marker.
+//!
+//! ## Dispatcher
+//!
+//! [`solve_ebv`] is the public entry point. It honours an explicit
+//! `solver = "cholesky" | "pcg"` argument or auto-selects via
+//! [`auto_select_solver`] based on $n$. The returned [`BlupResult`]
+//! contains per-random-effect EBVs, fixed-effect estimates, and
+//! diagnostic info (which solver ran, iteration count for PCG).
+
 pub mod cholesky;
 pub mod pcg;
 pub mod factorized;

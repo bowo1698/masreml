@@ -1,3 +1,34 @@
+//! Adaptive REML algorithm dispatcher.
+//!
+//! Single entry point for the R-side `run_reml(...)` call. Internally
+//! cascades through the three REML algorithms in [`super`]:
+//!
+//! 1. **HE regression** ([`super::he_regression`]) for starting values.
+//!    Always run; cheap, closed-form, robust.
+//! 2. **AI-REML** ([`super::ai_reml`]) for fast Newton-style convergence
+//!    near the optimum. Aborted if it produces a negative variance
+//!    component or fails to converge within `max_iter`.
+//! 3. **EM-REML** ([`super::em_reml`]) as the always-non-negative
+//!    fallback when AI fails.
+//!
+//! ## Dispatcher logic
+//!
+//! - If the user passes `method = "ai"`, `"em"`, or `"he"` explicitly,
+//!   that algorithm runs alone (no fallback). Useful for diagnostic
+//!   comparisons.
+//! - With `method = "auto"` (default), HE → AI → EM cascade applies.
+//! - Thread count for parallel sections (HE pairwise products, parallel
+//!   $G$ matrix-vector products) is set via
+//!   [`crate::utils::linalg::set_num_threads`] using `n_threads` from
+//!   the caller; default uses all available cores.
+//!
+//! ## Return value
+//!
+//! [`VarianceComponents`] carries the final $\sigma^2$ vector, the
+//! method actually used (`"ai"`, `"em"`, or `"he"`), iteration count,
+//! and the REML log-likelihood — enough for downstream R code to surface
+//! a clean convergence diagnostic to the user.
+
 use ndarray::Array2;
 use extendr_api::prelude::*;
 use std::result::Result as StdResult;

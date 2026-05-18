@@ -1,5 +1,38 @@
 // src/rust/src/gwas/emmax.rs
 
+//! EMMAX — efficient single-marker mixed-model association.
+//!
+//! Implements the EMMAX algorithm of Kang et al. (2010): instead of
+//! re-estimating variance components for every marker, factor the
+//! null-model $V = G \sigma^2_g + I \sigma^2_e$ **once** and reuse the
+//! factorisation to compute Wald/likelihood-ratio tests for every marker
+//! in turn.
+//!
+//! ## Algorithm
+//!
+//! 1. Fit the null mixed model $y = X\beta + u + \varepsilon$ via REML
+//!    (handled upstream by [`crate::reml`]).
+//! 2. Cholesky-factor $V$ once — encapsulated in
+//!    [`crate::solver::factorized::FactorizedV`] for reuse.
+//! 3. For each marker $j$:
+//!    - Solve $V^{-1} x_j$ with the cached factorisation.
+//!    - Compute $\hat\beta_j$, its standard error, and the LR statistic.
+//!    - Derive a $\chi^2$ $p$-value (df=1 for SNP, df=$h-1$ for MH).
+//! 4. Loop over markers in parallel via rayon.
+//!
+//! ## Multi-allelic extension
+//!
+//! For MH blocks, the per-allele test statistics are aggregated to a
+//! single per-block LR with df=$h-1$. Effect-size aggregation follows the
+//! weighted average used elsewhere in the package, keeping the output
+//! shape consistent with the SNP path.
+//!
+//! ## Reference
+//!
+//! Kang, H. M., Sul, J. H., Service, S. K., et al. (2010). Variance
+//! component model to account for sample structure in genome-wide
+//! association studies. *Nat. Genet.*, 42:348–354.
+
 use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 use statrs::distribution::{ChiSquared, ContinuousCDF};

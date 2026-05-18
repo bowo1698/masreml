@@ -1,3 +1,34 @@
+//! SNP additive relationship matrix (VanRaden 2008).
+//!
+//! Builds the additive genomic relationship matrix
+//!
+//! ```text
+//! G = W W' / k,    k = 2 · sum_j p_j (1 - p_j)
+//! ```
+//!
+//! where $W$ is the column-centered SNP matrix $W_{ij} = X_{ij} - 2 p_j$
+//! with $X_{ij} \in \{0, 1, 2\}$ allele dosages and $p_j$ the reference
+//! (training-set) allele frequency at marker $j$.
+//!
+//! ## GWABLUP support
+//!
+//! Optionally accepts a per-marker weight vector $d = (d_1, \dots, d_m)$
+//! to construct a GWAS-weighted $G$ matrix:
+//!
+//! ```text
+//! G_wa = sum_j d_j · w_j w_j' / sum_j d_j · 2 p_j (1 - p_j)
+//! ```
+//!
+//! When `weights = None` this collapses to the standard VanRaden $G$.
+//! Weights typically come from a smoothed likelihood-ratio statistic
+//! (see [`crate::gwas::smoother`]).
+//!
+//! ## Parallelism
+//!
+//! The $WW^\top$ product is computed with `ndarray::parallel` row-chunked
+//! across rayon threads. The scaling constant $k$ is computed via
+//! [`crate::matrix::compute_k`] without materialising $WW^\top$ first.
+
 use extendr_api::prelude::*;
 use ndarray::{Array2, Axis};
 use ndarray::parallel::prelude::*;

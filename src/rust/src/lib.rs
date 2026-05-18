@@ -1,4 +1,61 @@
 // src/lib.rs
+
+//! # masreml — Rust kernel
+//!
+//! Computational backend for the `masreml` R package: universal REML-BLUP
+//! genomic prediction supporting biallelic SNP, multi-allelic
+//! microhaplotype, and pedigree-based relationship matrices.
+//!
+//! ## Module map
+//!
+//! - [`matrix`] — relationship-matrix construction:
+//!   * `snp_additive` / `snp_dominance` — VanRaden (2008) additive and Da
+//!     et al. (2014) / Wang & Da (2014) dominance G matrices.
+//!   * `mh_additive` — Da (2015) $W_{\alpha h}$ additive $G$ for
+//!     multi-allelic microhaplotypes, with the per-locus frequency-weighted
+//!     row shrinkage.
+//!   * `pedigree` — Henderson (1976) recursive numerator relationship
+//!     matrix $A$.
+//! - [`reml`] — variance-component estimation:
+//!   * `he_regression` — Haseman–Elston regression (closed-form,
+//!     starting values).
+//!   * `ai_reml` — Average-Information REML (Johnson & Thompson, 1995).
+//!   * `em_reml` — Expectation-Maximization REML (Dempster et al., 1977;
+//!     Meyer, 1989). Slow but always non-negative.
+//!   * `adaptive` — auto-selects between HE / AI / EM based on conditioning
+//!     and convergence diagnostics.
+//! - [`solver`] — fixed/random effects solvers given fitted variance
+//!   components:
+//!   * `cholesky` — direct factorization; default for $n < 10{,}000$.
+//!   * `pcg` — preconditioned conjugate gradient; default for larger $n$.
+//!   * `factorized` — reusable Cholesky cache used by both.
+//! - [`gwas`] — single-marker association:
+//!   * `emmax` — EMMAX (Kang et al., 2010) with a pre-factorized $V$.
+//!   * `smoother` — local moving-average smoother for likelihood-ratio
+//!     statistics across markers/blocks (used by GWABLUP).
+//! - [`utils`] — small `ndarray_linalg` helpers used across modules.
+//!
+//! ## R-facing API
+//!
+//! Public entry points are wrapped with `#[extendr]` in this file and
+//! exposed to R as `r_build_g_snp_add`, `r_build_g_snp_dom`,
+//! `r_build_g_mh_add`, `r_build_a_ped`, `r_run_reml`, `r_run_emmax`, etc.
+//! The `extendr_module!` macro at the bottom of this file registers them
+//! all in one block.
+//!
+//! ## References
+//!
+//! - VanRaden, P. M. (2008). Efficient methods to compute genomic
+//!   predictions. *J. Dairy Sci.*, 91:4414–4423.
+//! - Da, Y. (2015). Multi-allelic haplotype model based on genetic
+//!   partition. *BMC Genetics*, 16:144.
+//! - Henderson, C. R. (1976). A simple method for computing the inverse
+//!   of a numerator relationship matrix. *Biometrics*, 32:69–83.
+//! - Johnson, D. L. & Thompson, R. (1995). Restricted maximum likelihood
+//!   estimation of variance components. *J. Dairy Sci.*, 78:449–456.
+//! - Kang, H. M. et al. (2010). Variance component model to account for
+//!   sample structure in GWAS. *Nat. Genet.*, 42:348–354.
+
 use extendr_api::prelude::*;
 
 mod matrix;

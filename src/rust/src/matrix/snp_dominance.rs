@@ -1,3 +1,39 @@
+//! SNP dominance relationship matrix.
+//!
+//! Implements the dominance coding of Da et al. (2014) and Wang & Da
+//! (2014):
+//!
+//! ```text
+//! w_δ_ij = -2 · p_j²            if genotype AA  (homozygous reference)
+//! w_δ_ij =  2 · p_j (1 - p_j)   if genotype Aa  (heterozygous)
+//! w_δ_ij = -2 · (1 - p_j)²      if genotype aa  (homozygous alternate)
+//! ```
+//!
+//! with $p_j$ the reference allele frequency. The dominance G matrix is
+//! then
+//!
+//! ```text
+//! D = W_δ W_δ' / k_δ,    k_δ = tr(W_δ W_δ') / n
+//! ```
+//!
+//! Under HWE, the expected value of $W_\delta^{(j)}$ is zero, so the
+//! coding is mean-zero by construction — analogous to the
+//! frequency-centered additive coding in [`super::snp_additive`].
+//!
+//! ## Why a separate dominance G?
+//!
+//! Additive and dominance variance components are orthogonal under HWE.
+//! In a mixed model
+//!
+//! ```text
+//! y = X β + Z g + Z d + ε
+//! Var(g) = G · σ²_a    Var(d) = D · σ²_d
+//! ```
+//!
+//! REML can estimate $\sigma^2_a$ and $\sigma^2_d$ separately. Dropping
+//! the dominance term biases the additive heritability estimate upward
+//! when dominance variance is non-trivial.
+
 use extendr_api::prelude::*;
 use ndarray::{Array2, Axis};
 use rayon::prelude::*;

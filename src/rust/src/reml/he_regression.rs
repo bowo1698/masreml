@@ -58,13 +58,33 @@ pub fn run_he_regression(
     let n = data.n;
     let n_random = data.n_random;
 
-    // Step 1: Adjust phenotype for fixed effects
-    // y_hat = y - X(X'X)^-1 X'y = M*y where M = I - X(X'X)^-1 X'
+    // ============================================================
+    // Step 1 — Project out fixed effects.
+    //
+    //     y_hat = M · y,    M = I − X (X'X)⁻¹ X'
+    //
+    // M is the orthogonal projector onto the null space of X', so
+    // y_hat lives in the (n − rank(X))-dimensional residual space.
+    // All subsequent computation uses y_hat in place of y; this is what
+    // makes HE a *restricted* maximum-likelihood-style method.
+    // ============================================================
     let y_hat = adjust_fixed_effects(&data.y, &data.x)?;
 
-    // Step 2: Build HE regression design matrix Z and response r
-    // Z is n*(n-1)/2 x (n_random + 1) [intercept + K_ij per component]
-    // r is n*(n-1)/2 vector of y_hat_i * y_hat_j (upper triangle pairs)
+    // ============================================================
+    // Step 2 — Build the HE pairwise design.
+    //
+    // For every distinct pair (i, j) with i < j, the HE model says
+    //     E[ y_hat_i · y_hat_j ] = μ + Σ_k K_k[i, j] · h²_k
+    // where K_k is the k-th relationship matrix and h²_k is its
+    // heritability contribution. Stack these over all n(n−1)/2 pairs:
+    //
+    //     r ∈ ℝ^{n(n−1)/2},   r_{ij} = y_hat_i · y_hat_j
+    //     Z ∈ ℝ^{n(n−1)/2 × (n_random+1)}
+    //     Z[(i,j), :] = [1,  K_1[i,j],  K_2[i,j],  ...,  K_K[i,j]]
+    //
+    // The intercept column absorbs μ; columns 1..K give the per-
+    // component slopes that OLS will return as h² estimates.
+    // ============================================================
     let n_pairs = n * (n - 1) / 2;
     let n_cols = n_random + 1; // intercept + one per G matrix
 
@@ -94,15 +114,37 @@ pub fn run_he_regression(
 
     let r_arr = Array1::from_vec(r);
 
-    // Step 3: OLS solution beta = (Z'Z)^-1 Z'r
+    // ============================================================
+    // Step 3 — Closed-form OLS solution.
+    //
+    //     β = (Z'Z)⁻¹ Z'r
+    //
+    // β[0] is the estimate of μ (HE intercept) and β[1..] are the
+    // heritability estimates ĥ²_k, one per relationship matrix. We
+    // surface a SingularAI error if Z'Z is rank-deficient — this
+    // happens when two K_k matrices are collinear (e.g. requesting
+    // both an additive and a pedigree component when the pedigree is
+    // saturated) and signals an identifiability problem upstream.
+    // ============================================================
     let ztz = z.t().dot(&z);
     let ztr = z.t().dot(&r_arr);
 
     let beta = ztz.solve(&ztr)
         .map_err(|_| RemlError::SingularAI)?;
 
-    // Step 4: Convert h2 estimates to variance components
-    // sigma2_i = var(y_hat) * h2_i
+    // ============================================================
+    // Step 4 — Rescale heritabilities to variance components.
+    //
+    //     σ²_k = Var(y_hat) · h²_k        (k = 1..K)
+    //     σ²_e = Var(y_hat) · (1 − Σ_k h²_k)
+    //
+    // Var(y_hat) is the sample variance of the residual phenotype,
+    // estimated with the standard n−1 denominator. We constrain
+    // each h²_k ∈ [0.01, 0.99] and h²_e ≥ 0.01 to avoid degenerate
+    // starting values for downstream AI / EM iterations — HE itself
+    // is unbiased but can produce negative h² estimates on noisy
+    // data; clipping yields valid σ² that AI can then refine.
+    // ============================================================
     let var_yhat: f64 = {
         let mean = y_hat.mean().unwrap_or(0.0);
         y_hat.iter().map(|&v| (v - mean).powi(2)).sum::<f64>()

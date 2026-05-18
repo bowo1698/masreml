@@ -40,41 +40,67 @@ use statrs::distribution::{ChiSquared, ContinuousCDF};
 use super::{GwasError, GwasResult, StdResult};
 use crate::solver::factorized::FactorizedV;
 
-/// Compute EMMAX for a single SNP column x_j (bi-allelic)
-/// Returns (beta_j, se_j, lr_j, pval_j)
+/// Compute the EMMAX Wald/LR statistic for a single SNP column.
 ///
-/// b̂_j = (X_j' V⁻¹ X_j)⁻¹ X_j' V⁻¹ y
-/// se_j = sqrt((X_j' V⁻¹ X_j)⁻¹)
-/// LR_j = ½ * y' V⁻¹ X_j * b̂_j = ½ * (b̂_j / se_j)²
+/// # Model
+///
+/// Under the null mixed model
+///     y = X·β + u + ε,   u ~ N(0, σ²_g · K),   ε ~ N(0, σ²_e · I)
+/// already fit by REML, the per-marker working model adds a single
+/// candidate fixed-effect column x_j:
+///     y = X·β + x_j · b_j + u + ε.
+///
+/// # Test statistic
+///
+/// The Wald estimator and its information at the null are
+///
+///     b̂_j  = (x_j' V⁻¹ x_j)⁻¹ · x_j' V⁻¹ y,
+///     I_j  =  x_j' V⁻¹ x_j,
+///     SE_j =  I_j⁻¹/²,
+///     LR_j =  ½ · I_j · b̂_j²  =  ½ · (b̂_j / SE_j)²,
+///     p_j  =  P( χ²₁ > 2 · LR_j ).
+///
+/// `V` enters only through `v_factor` (a pre-computed Cholesky factor of
+/// V), so `v_factor.solve_vec(x_j)` returns V⁻¹ x_j without ever forming
+/// V⁻¹ explicitly. `vinv_y` is computed once outside this function and
+/// passed in for all markers — that is the key efficiency of EMMAX: a
+/// single Cholesky amortises the per-marker cost from O(n³) to O(n²).
+///
+/// # Degenerate guard
+///
+/// If `x_j' V⁻¹ x_j ≤ 0` the marker is effectively constant after
+/// projection by V⁻¹ (e.g. monomorphic locus); return `(0, 0, 0, 1)`
+/// instead of dividing by zero. p = 1 means "no evidence against null".
 fn emmax_single_snp(
     x_j: &Array1<f64>,
     vinv_y: &Array1<f64>,
     v_factor: &FactorizedV,
 ) -> StdResult<(f64, f64, f64, f64), GwasError> {
-    // V⁻¹ x_j
+    // V⁻¹ x_j  via cached Cholesky factor of V.
     let vinv_xj = v_factor.solve_vec(x_j)
         .map_err(|e| GwasError::LinAlgError(e.to_string()))?;
 
-    // X_j' V⁻¹ X_j (scalar)
+    // Fisher information at the null: I_j = x_j' V⁻¹ x_j (scalar).
     let xtvinvx: f64 = x_j.dot(&vinv_xj);
 
     if xtvinvx <= 0.0 {
+        // Degenerate marker (post-projection variance ≤ 0): skip.
         return Ok((0.0, 0.0, 0.0, 1.0));
     }
 
-    // X_j' V⁻¹ y (scalar)
+    // Numerator of the Wald estimator: x_j' V⁻¹ y (scalar).
     let xtviny: f64 = x_j.dot(vinv_y);
 
-    // b̂_j
+    // b̂_j = (x_j' V⁻¹ y) / (x_j' V⁻¹ x_j)
     let beta = xtviny / xtvinvx;
 
-    // se_j = sqrt(1 / X_j' V⁻¹ X_j)
+    // SE_j = (x_j' V⁻¹ x_j)⁻¹/²  — square-root of the inverse information.
     let se = (1.0 / xtvinvx).sqrt();
 
-    // LR_j = ½ (b̂_j / se_j)²
+    // LR_j = ½ (b̂_j / SE_j)²  — likelihood-ratio statistic, df = 1.
     let lr = 0.5 * (beta / se).powi(2);
 
-    // p-value: chi-squared df=1, statistic = 2*LR
+    // p-value from χ²_1 survival function evaluated at 2·LR.
     let pval = compute_pval_chi2(2.0 * lr, 1);
 
     Ok((beta, se, lr, pval))

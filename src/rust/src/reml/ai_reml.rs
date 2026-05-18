@@ -77,17 +77,45 @@ pub fn run_ai_reml(
     let mut converged = false;
     let mut n_iter = 0;
 
+    // ================================================================
+    // AI-REML iteration (Johnson & Thompson 1995).
+    //
+    // For variance-component vector θ = (σ²_1, …, σ²_K, σ²_e), the
+    // REML log-likelihood has gradient (score) and a Newton-style
+    // update using the *average information* matrix as the curvature
+    // approximation:
+    //
+    //     V(θ) = Σ_k σ²_k G_k + σ²_e I,                            (V)
+    //     P    = V⁻¹ − V⁻¹ X (X' V⁻¹ X)⁻¹ X' V⁻¹,                  (P)
+    //     s_k  = −½ [ tr(P G_k) − y' P G_k P y ]   ← score for σ²_k
+    //     AI_{kl} = ½  (P y)' G_k P G_l (P y)      ← AI[k, l]
+    //     θ⁽ᵗ⁺¹⁾ = θ⁽ᵗ⁾ + AI⁻¹ · s.
+    //
+    // AI averages observed and expected information; it stays
+    // positive definite near the optimum (unlike pure Newton), giving
+    // near-quadratic convergence while avoiding the curvature
+    // pathologies that derail vanilla Newton-Raphson REML.
+    // ================================================================
     for iter in 0..max_iter {
         n_iter = iter + 1;
 
+        // Build V(θ) and solve (V, X) once; both the score and AI
+        // matrix below need P = V⁻¹ − V⁻¹X (X'V⁻¹X)⁻¹ X'V⁻¹ applied
+        // to y. `compute_py` exploits a Cholesky factor cache.
         let v = data.build_v(&sigma2);
         let py = compute_py(&v, &data.y, &data.x)
             .map_err(|e| RemlError::LinAlgError(e.to_string()))?;
 
+        // Score vector (gradient of REML log-likelihood w.r.t. θ).
+        // Each entry takes the form
+        //     s_k = −½ ( tr(P G_k) − y' P G_k P y ).
+        // The trace term uses `solve_matrix` to avoid forming P explicitly.
         let grad = compute_gradient(
             &v, &data.x, &py, &data.g_list, n_random
         )?;
 
+        // Convergence check on the score; ‖s‖_∞ < tol means we sit on
+        // the REML stationary point to first order.
         let max_grad = grad.iter().map(|g| g.abs()).fold(0.0f64, f64::max);
         if max_grad < tol {
             converged = true;
@@ -96,21 +124,32 @@ pub fn run_ai_reml(
             break;
         }
 
+        // AI matrix — symmetric positive (semi-)definite at the optimum.
+        // Element AI[k, l] = ½ (Py)' G_k P G_l (Py).
         let ai = compute_ai_matrix(
             &v, &py, &data.g_list, n_random
         )?;
 
+        // Solve  AI · Δ = s  for the Newton direction. If AI is singular
+        // — typically meaning two variance components are non-identifiable
+        // given the data — bail out so the adaptive dispatcher can fall
+        // back to EM-REML (which never inverts AI).
         let delta = ai.solve(&Array1::from_vec(grad.clone()))
             .map_err(|_| RemlError::SingularAI)?;
 
+        // Newton step with safeguards: `update_sigma2_with_step_halving`
+        // halves the step until every σ²_i stays positive (variance
+        // components cannot be negative under the REML model). Step
+        // halving keeps AI useful in the early iterations when starting
+        // values are far from the optimum.
         sigma2 = update_sigma2_with_step_halving(
             &sigma2, &delta, tol
         )?;
 
+        // Recompute log-likelihood for monitoring / final reporting.
         let v_new = data.build_v(&sigma2);
         loglik = compute_reml_loglik(&v_new, &data.y, &data.x)
             .map_err(|e| RemlError::LinAlgError(e.to_string()))?;
-
     }
 
     Ok(VarianceComponents::new(

@@ -78,22 +78,47 @@ pub fn run_em_reml(
     let mut converged = false;
     let mut n_iter = 0;
 
+    // ================================================================
+    // EM-REML iteration (Dempster et al. 1977; Meyer 1989).
+    //
+    // EM exploits the latent-variable representation
+    //     y | u ~ N(X β + Σ_k Z_k u_k, σ²_e I),    u_k ~ N(0, σ²_k G_k)
+    // to derive a multiplicative update for each variance component:
+    //
+    //     σ²_k⁽ᵗ⁺¹⁾ = (σ²_k⁽ᵗ⁾)² · ( y' P G_k P y + tr(G_k C_kk⁻¹) )
+    //                 / n_k                                            (genetic)
+    //
+    //     σ²_e⁽ᵗ⁺¹⁾ = (σ²_e⁽ᵗ⁾)² · ( y' P² y + tr(C_ee⁻¹) ) / n         (residual)
+    //
+    // where C_kk is the posterior covariance of u_k. Both updates are
+    // ratios of strictly non-negative quantities, so σ² ≥ 0 is preserved
+    // automatically — EM never needs the step-halving safeguard that
+    // AI-REML uses. The price is linear (not super-linear) convergence;
+    // EM typically needs 10–100× more iterations than AI for the same
+    // tolerance. It earns its keep when AI fails (singular AI matrix,
+    // negative variance estimates).
+    // ================================================================
     for iter in 0..max_iter {
         n_iter = iter + 1;
 
-        // Build V from current sigma2
+        // V(θ) and Py are the only computations shared with AI-REML;
+        // everything else differs because EM uses *expected* sufficient
+        // statistics rather than Newton-style updates.
         let v = data.build_v(&sigma2);
 
-        // Compute Py
         let py = compute_py(&v, &data.y, &data.x)
             .map_err(|e| RemlError::LinAlgError(e.to_string()))?;
 
-        // Compute new sigma2 via EM update equations
+        // EM coordinate update on θ. `em_update` evaluates the
+        // multiplicative formula for every genetic component plus the
+        // residual variance simultaneously.
         let sigma2_new = em_update(
             &v, &data.x, &py, &data.g_list, &sigma2, n, n_random
         )?;
 
-        // Check convergence: max relative change in sigma2
+        // Convergence criterion: max relative change in any component.
+        // Guard against division-by-zero when a component is shrinking
+        // toward zero by using a 1e-10 floor on the denominator.
         let max_change = sigma2_new.iter()
             .zip(sigma2.iter())
             .map(|(&new, &old)| ((new - old) / old.abs().max(1e-10)).abs())

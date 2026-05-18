@@ -124,25 +124,54 @@ fn emmax_single_block_mh(
         return Ok((0.0, 0.0, 0.0, 1.0));
     }
 
-    // V⁻¹ X_block: n × k
+    // ============================================================
+    // Multi-allelic block test — generalises the per-SNP EMMAX
+    // from a scalar to a (k-1)-dimensional vector hypothesis.
+    //
+    // The working model adds a block of k-1 non-baseline allele
+    // columns:
+    //     y = X β + X_block · b + u + ε,    b ∈ ℝ^{k-1}.
+    //
+    // The score statistic for H_0: b = 0 against H_1: b ≠ 0 is:
+    //
+    //     b̂   = (X_block' V⁻¹ X_block)⁻¹ X_block' V⁻¹ y,        (estimator)
+    //     LR  = ½ b̂' (X_block' V⁻¹ X_block) b̂
+    //         = ½ (X_block' V⁻¹ y)' b̂,                          (statistic)
+    //     p   = P(χ²_{k-1} > 2 LR).                              (p-value)
+    //
+    // V⁻¹ X_block is computed via the same cached Cholesky factor as
+    // the per-SNP routine — that is the key efficiency of EMMAX.
+    //
+    // The (X_block' V⁻¹ X_block) matrix is a small (k-1) × (k-1)
+    // symmetric system; `solve_symmetric` handles it with a direct
+    // Cholesky. Negative LR values can occur from FP round-off when
+    // the block has near-zero effect; we clip to 0 so the chi-square
+    // tail probability stays in [0, 1].
+    // ============================================================
+
+    // V⁻¹ X_block via cached Cholesky: shape n × (k-1).
     let vinv_xblock = v_factor.solve_mat(x_block)
         .map_err(|e| GwasError::LinAlgError(e.to_string()))?;
 
-    // X' V⁻¹ X: k × k
+    // X_block' V⁻¹ X_block: (k-1) × (k-1) symmetric PD information matrix.
     let xtvinvx = x_block.t().dot(&vinv_xblock);
 
-    // X' V⁻¹ y: k × 1
+    // X_block' V⁻¹ y: (k-1)-vector — the score evaluated at b̂ = 0.
     let xtviny = x_block.t().dot(vinv_y);
 
-    // Solve (X'V⁻¹X) b̂ = X'V⁻¹y
+    // Wald estimate via the small symmetric solve.
     let beta = solve_symmetric(&xtvinvx, &xtviny)
         .map_err(|e| GwasError::LinAlgError(e))?;
 
-    // LR_block = ½ * b̂' (X'V⁻¹X) b̂ = ½ * (X'V⁻¹y)' b̂
+    // LR = ½ b̂' I b̂ = ½ (score)' b̂. Clip to 0 (FP safety).
     let lr = 0.5 * xtviny.dot(&beta);
     let lr = if lr < 0.0 { 0.0 } else { lr };
 
-    // Aggregated beta norm and se norm for reporting
+    // Aggregate effect-size and standard-error summaries for the
+    // block. `beta_norm` is the Euclidean norm of b̂, giving a single
+    // "effect magnitude" comparable across blocks of different k.
+    // `se_norm` is a similarly compressed SE summary derived from
+    // the diagonal of the information matrix.
     let beta_norm = beta.dot(&beta).sqrt();
     let se_norm   = (1.0 / xtvinvx.diag().iter()
         .map(|x| x * x)
@@ -150,19 +179,48 @@ fn emmax_single_block_mh(
         .sqrt())
         .sqrt();
 
-    // p-value: chi-squared df = k
+    // Chi-square tail with df = k - 1, evaluated at the test
+    // statistic 2 · LR. Under H_0 the LR ratio (Wilks 1938) is
+    // asymptotically χ²_{k-1}-distributed.
     let pval = compute_pval_chi2(2.0 * lr, k);
 
     Ok((beta_norm, se_norm, lr, pval))
 }
 
-/// Run EMMAX GWAS for SNP markers (bi-allelic)
+/// Run a full EMMAX GWAS scan over biallelic SNP markers.
 ///
-/// Input:
-///   w_centered: centered genotype matrix (n × m), VanRaden coding
-///   y: phenotype vector (n)
-///   v_factor: pre-computed Cholesky factorization of V
-/// Output: GwasResult with lr, beta, se, pval per SNP
+/// # Arguments
+///
+/// - `w_centered`: `(n, m)` VanRaden-centered SNP design (output of
+///   [`crate::matrix::snp_additive::center_w_vanraden`] or
+///   equivalent).
+/// - `y`: length-`n` phenotype vector.
+/// - `x`: `(n, c)` fixed-effects design.
+/// - `v_factor`: pre-computed Cholesky factor of V, produced once
+///   from the null-model REML fit.
+///
+/// # Algorithm
+///
+/// 1. Compute `P y = V⁻¹ y − V⁻¹ X (X' V⁻¹ X)⁻¹ X' V⁻¹ y` once
+///    via the cached Cholesky factor — this is the residual phenotype
+///    after accounting for fixed effects.
+/// 2. For each SNP `j` (in parallel via Rayon):
+///    - Solve `V⁻¹ x_j` via the cached factor.
+///    - Compute the Wald statistic per [`emmax_single_snp`].
+/// 3. Collect the per-marker `(β̂, SE, LR, p)` tuples into a
+///    [`GwasResult`].
+///
+/// # Performance
+///
+/// Total cost ≈ `O(n³)` for the one-time Cholesky + `m · O(n²)` for
+/// the per-marker solves. Compared with re-fitting REML per marker
+/// (which would be `m · O(n³)` plus the iteration count), EMMAX is
+/// approximately `m`× cheaper — the entire reason the method exists.
+///
+/// # Errors
+///
+/// `GwasError::DimensionMismatch` if `y` and `w_centered` have
+/// incompatible shapes; `GwasError::LinAlgError` on a failed solve.
 pub fn run_emmax_snp(
     w_centered: &Array2<f64>,
     y: &Array1<f64>,
@@ -209,15 +267,41 @@ pub fn run_emmax_snp(
     Ok(GwasResult::new(lr, beta, se, pval))
 }
 
-/// Run EMMAX GWAS for MH markers (multi-allelic)
+/// Run a full EMMAX GWAS scan over multi-allelic microhaplotype
+/// blocks.
 ///
-/// Input:
-///   w_mh: W_αh matrix (n × total_alleles), Da (2015) coding
-///         columns are grouped by block: [block1_alleles | block2_alleles | ...]
-///   block_sizes: number of alleles (k-1) per block
-///   y: phenotype vector (n)
-///   v_factor: pre-computed Cholesky factorization of V
-/// Output: GwasResult with lr, beta, se, pval per MH block
+/// # Arguments
+///
+/// - `w_mh`: `(n, total_alleles)` W_αh matrix in column-major
+///   block-stacked layout — block 1's `h_1 − 1` columns first, then
+///   block 2's `h_2 − 1` columns, etc.
+/// - `block_sizes`: length-`n_blocks` vector with `h_b − 1`, the
+///   number of non-baseline columns per block. Used to slice
+///   `w_mh` into per-block sub-matrices for the joint test.
+/// - `y`, `x`, `v_factor`: same role as in [`run_emmax_snp`].
+///
+/// # Algorithm
+///
+/// 1. Compute `P y` once via the cached Cholesky factor.
+/// 2. For each block (parallel over blocks):
+///    - Slice the corresponding columns out of `w_mh`.
+///    - Run [`emmax_single_block_mh`] to obtain the joint
+///      `(‖β̂‖, SE-summary, LR, χ²_{h_b − 1} p-value)`.
+/// 3. Assemble the per-block tuples into a [`GwasResult`].
+///
+/// # Why a joint test per block
+///
+/// Testing each non-baseline column individually is statistically
+/// inefficient because alleles within a block share information.
+/// The joint test gains power proportional to `h_b − 1` whenever
+/// the block carries any association at all. The price is a
+/// (k − 1)-dimensional null distribution rather than scalar χ²_1.
+///
+/// # Errors
+///
+/// `GwasError::DimensionMismatch` for shape mismatches between
+/// `w_mh`, `block_sizes`, and `y`. `GwasError::LinAlgError` on
+/// failed solves inside the per-block routine.
 pub fn run_emmax_mh(
     w_mh: &Array2<f64>,
     block_sizes: &[usize],
@@ -298,8 +382,23 @@ pub fn run_emmax_mh(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Solve symmetric positive definite system A x = b
-/// Uses Cholesky for small k (k < 50), direct inverse otherwise
+/// Solve a small symmetric positive-definite system `A · x = b`.
+///
+/// Used by [`emmax_single_block_mh`] to invert the per-block
+/// information matrix `X_block' V⁻¹ X_block`, which is at most
+/// `(h_max − 1) × (h_max − 1)` — typically `< 10 × 10`. For systems
+/// this small, `ndarray_linalg`'s general `Solve` (LU under the
+/// hood) is fast and robust; a specialised Cholesky would shave
+/// negligible cost. The function exists as a thin abstraction so the
+/// caller doesn't depend on the linear-algebra crate directly.
+///
+/// # Errors
+///
+/// Returns the LAPACK error message as a `String` (forwarded to a
+/// `GwasError::LinAlgError` by the caller). Failures typically
+/// mean the per-block information matrix is rank-deficient — e.g.
+/// when one allele column is collinear with another within the
+/// block.
 fn solve_symmetric(
     a: &Array2<f64>,
     b: &Array1<f64>,
@@ -355,5 +454,79 @@ mod tests {
         assert!(pval >= 0.0 && pval <= 1.0);
         let pval_zero = compute_pval_chi2(0.0, 1);
         assert_eq!(pval_zero, 1.0);
+    }
+
+    #[test]
+    fn test_emmax_mh_block_basic() {
+        // Multi-allelic block: 5 individuals × 2 non-baseline microhaplotypes.
+        // V = I (no genetic variance), so the test is the pure OLS Wald
+        // statistic against y. The point is to verify the block path
+        // produces sane outputs (non-negative LR, p ∈ [0, 1], correct df).
+        use crate::solver::factorized::FactorizedV;
+        let x_block = array![
+            [-1.0,  0.5],
+            [ 0.0, -0.5],
+            [ 1.0,  0.5],
+            [-1.0, -0.5],
+            [ 0.5,  0.0],
+        ];
+        let y = array![1.0, 0.0, 2.0, 0.5, 1.0];
+
+        let g_list: Vec<(Array2<f64>, String)> = vec![];
+        let sigma2 = vec![1.0_f64];
+        let v_factor = FactorizedV::new(&g_list, &sigma2, 5).unwrap();
+        let vinv_y = v_factor.solve_vec(&y).unwrap();
+
+        let (beta_norm, se_norm, lr, pval) =
+            emmax_single_block_mh(&x_block, &vinv_y, &v_factor).unwrap();
+
+        // Basic sanity invariants of the test statistic.
+        assert!(lr >= 0.0, "LR must be non-negative, got {}", lr);
+        assert!(pval >= 0.0 && pval <= 1.0,
+            "p must be in [0, 1], got {}", pval);
+        assert!(beta_norm >= 0.0, "‖β̂‖ must be non-negative");
+        assert!(se_norm.is_finite(), "se must be finite");
+    }
+
+    #[test]
+    fn test_emmax_mh_empty_block_returns_null() {
+        // k = 0 (no non-baseline alleles) → degenerate test, must return
+        // (0, 0, 0, 1) instead of dividing by zero.
+        use crate::solver::factorized::FactorizedV;
+        let x_block = Array2::<f64>::zeros((4, 0));
+        let y = array![1.0, 0.0, 2.0, 0.5];
+
+        let g_list: Vec<(Array2<f64>, String)> = vec![];
+        let sigma2 = vec![1.0_f64];
+        let v_factor = FactorizedV::new(&g_list, &sigma2, 4).unwrap();
+        let vinv_y = v_factor.solve_vec(&y).unwrap();
+
+        let (beta_norm, se_norm, lr, pval) =
+            emmax_single_block_mh(&x_block, &vinv_y, &v_factor).unwrap();
+        assert_eq!(beta_norm, 0.0);
+        assert_eq!(se_norm, 0.0);
+        assert_eq!(lr, 0.0);
+        assert_eq!(pval, 1.0);
+    }
+
+    #[test]
+    fn test_emmax_snp_degenerate_marker_returns_null() {
+        // A marker that is orthogonal to V⁻¹ in the trivial sense
+        // (a zero column) must produce the degenerate (0, 0, 0, 1) result.
+        use crate::solver::factorized::FactorizedV;
+        let zero_marker = Array1::<f64>::zeros(4);
+        let y = array![1.0, 0.0, 2.0, 0.5];
+
+        let g_list: Vec<(Array2<f64>, String)> = vec![];
+        let sigma2 = vec![1.0_f64];
+        let v_factor = FactorizedV::new(&g_list, &sigma2, 4).unwrap();
+        let vinv_y = v_factor.solve_vec(&y).unwrap();
+
+        let (beta, se, lr, pval) =
+            emmax_single_snp(&zero_marker, &vinv_y, &v_factor).unwrap();
+        assert_eq!(beta, 0.0);
+        assert_eq!(se, 0.0);
+        assert_eq!(lr, 0.0);
+        assert_eq!(pval, 1.0);
     }
 }

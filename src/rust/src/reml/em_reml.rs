@@ -158,7 +158,47 @@ pub fn run_em_reml(
     ))
 }
 
-/// EM update for all variance components
+/// One EM iteration: update every variance component using the
+/// multiplicative form of Meyer (1989).
+///
+/// # Update equations
+///
+/// For each genetic component `k`:
+///
+/// ```text
+/// σ²_k⁽ᵗ⁺¹⁾ = σ²_k⁽ᵗ⁾ + (σ²_k⁽ᵗ⁾)² / n · ( y' P G_k P y − tr(P G_k) ),
+/// ```
+///
+/// and for the residual variance:
+///
+/// ```text
+/// σ²_e⁽ᵗ⁺¹⁾ = σ²_e⁽ᵗ⁾ + (σ²_e⁽ᵗ⁾)² / n · ( y' P² y − tr(P) ).
+/// ```
+///
+/// Each update is the current σ² plus a non-negative correction
+/// term derived from the EM expected-sufficient-statistic. The
+/// (σ²)² scaling keeps everything in the right units and gives
+/// the multiplicative-shrinkage shape that distinguishes EM from
+/// raw gradient ascent.
+///
+/// # Algorithm
+///
+/// 1. Pre-compute `V⁻¹ X` and `X' V⁻¹ X` once (reused across all
+///    components, exactly as in `compute_gradient`).
+/// 2. For each genetic component:
+///    - `tr(V⁻¹ G_k)` via column-wise solve, then trace.
+///    - Correction `tr((X' V⁻¹ X)⁻¹ X' V⁻¹ G_k V⁻¹ X)`.
+///    - `tr(P G_k) = tr(V⁻¹ G_k) − correction`.
+///    - `(P y)' G_k (P y)` for the quadratic form.
+///    - Multiplicative update with a `max(., 1e-6)` floor.
+/// 3. Same template for the residual variance with `G = I`.
+///
+/// # Why a floor on σ²
+///
+/// EM never produces negative σ² in exact arithmetic, but
+/// round-off can drive a component arbitrarily close to zero. The
+/// `1e-6` floor prevents V from becoming numerically singular in
+/// the next iteration's Cholesky factorisation.
 fn em_update(
     v: &Array2<f64>,
     x: &Array2<f64>,

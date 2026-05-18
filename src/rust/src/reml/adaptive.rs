@@ -39,22 +39,52 @@ use super::ai_reml::run_ai_reml;
 use super::em_reml::run_em_reml;
 use crate::utils::linalg::set_num_threads;
 
-/// Adaptive REML algorithm selection
+/// Top-level REML dispatcher, exposed to R via `r_run_reml`.
 ///
-/// Strategy:
-///   n < 50,000:
-///     1. HE regression → starting values
-///     2. AI-REML → fast convergence
-///     3. AI diverge? → EM-REML fallback
-///   n >= 50,000:
-///     1. HE regression only (O(n^2), no iteration)
+/// # Cascade strategy (`method = "auto"`, default)
 ///
-/// Manual override via method parameter:
-///   "auto" → adaptive strategy above
-///   "HE"   → HE only
-///   "AI"   → AI-REML directly (uniform starting values)
-///   "EM"   → EM-REML directly
-///   "HI"   → HE → AI-REML (no EM fallback)
+/// - **Small / medium n (`n < 50 000`)**:
+///   1. **HE regression** — closed-form starting values (always
+///      runs; output feeds the next stages, never a final answer).
+///   2. **AI-REML** — Newton-style iteration that usually converges
+///      in 5–15 iterations near the optimum.
+///   3. **EM-REML fallback** — engaged automatically if AI returns
+///      a negative variance component or fails to converge within
+///      `max_iter`. EM is slow but always non-negative.
+///
+/// - **Large n (`n ≥ 50 000`)**:
+///   - **HE only**. AI/EM both need at least `O(n²)` work per
+///     iteration and become impractical; HE is a single closed-form
+///     evaluation that scales as `O(n²)`. Users who need a fully
+///     converged REML at this scale should pre-filter to a tractable
+///     subset or use the iterative path explicitly.
+///
+/// # Manual override (`method` parameter)
+///
+/// | Value  | Behaviour                                                |
+/// |--------|----------------------------------------------------------|
+/// | `"auto"` | Adaptive strategy above.                              |
+/// | `"HE"`   | HE only. Returns immediately after the closed-form OLS. |
+/// | `"AI"`   | HE → AI directly with no EM fallback. Fails if AI fails. |
+/// | `"EM"`   | HE → EM directly (skip AI). Slower but always non-negative. |
+/// | `"HI"`   | HE → AI but with EM fallback disabled. Used in diagnostic comparisons. |
+///
+/// # Thread pool
+///
+/// `n_threads = 0` (the default surfaced by the R wrapper) means
+/// "use all available cores", which we resolve via
+/// `rayon::current_num_threads()`. Any positive value pins Rayon
+/// **and** OpenBLAS to that count via
+/// [`crate::utils::linalg::set_num_threads`] to avoid the
+/// oversubscription discussed there.
+///
+/// # Output
+///
+/// Returns an R list with `sigma2`, `h2`, `loglik`, `n_iter`,
+/// `algorithm`, and `converged` fields on success. On failure the
+/// list contains an `error` string and null placeholders for the
+/// rest, so the R wrapper can detect the failure path without
+/// pattern-matching on Rust types.
 pub fn run_reml(
     y: &[f64],
     x: RMatrix<f64>,
@@ -183,7 +213,48 @@ fn dispatch_algorithm(
     }
 }
 
-/// Adaptive HE → AI-REML → EM-REML fallback
+/// Adaptive cascade: HE regression → AI-REML → optional EM-REML
+/// fallback.
+///
+/// # Decision tree
+///
+/// ```text
+/// HE regression  →  starting values σ²_HE
+///       │
+///       ▼
+/// AI-REML(σ²_HE)
+///       │
+///       ├── converged       → return AI result (algorithm = "AI")
+///       │
+///       ├── completed but not converged
+///       │       → EM-REML(σ²_AI_partial),  algorithm = "HI+EM"
+///       │
+///       └── failed entirely (e.g. singular AI matrix)
+///               → EM-REML(σ²_HE),          algorithm = "HE+EM"
+/// ```
+///
+/// # Algorithm string in output
+///
+/// The returned `VarianceComponents.algorithm` records the actual
+/// path taken so downstream R code can surface a meaningful
+/// diagnostic to the user:
+///
+/// - `"AI"` — AI-REML converged from HE starts (the happy path).
+/// - `"HI+EM"` — AI didn't converge; EM picked up AI's partial σ²
+///   and finished the job.
+/// - `"HE+EM"` — AI failed catastrophically (e.g. singular AI matrix
+///   on degenerate data); EM ran from HE starts only.
+///
+/// # Why this cascade
+///
+/// AI-REML is the fast path (super-linear convergence near the
+/// optimum) but can fail on ill-conditioned data. EM is the slow,
+/// robust fallback that always converges to a non-negative
+/// solution. HE is cheap enough to always run first because its
+/// closed-form output gives both methods a high-quality starting
+/// point — much better than uniform initialisation, which can
+/// trigger 100+ extra iterations before either method finds the
+/// optimum's basin.
 fn adaptive_hi_em(
     data: &RemlData,
     max_iter: usize,
@@ -223,9 +294,27 @@ fn adaptive_hi_em(
     }
 }
 
-/// Generate uniform starting values
-/// sigma2_i = total_var * genetic_prop / n_random
-/// sigma2_e = total_var * (1 - genetic_prop)
+/// Generate uniform starting values for AI / EM when HE is not used.
+///
+/// # Formula
+///
+/// ```text
+/// σ²_k = total_var · genetic_prop / n_random,   k = 1..n_random
+/// σ²_e = total_var · (1 − genetic_prop)
+/// ```
+///
+/// Default `genetic_prop = 0.3` (h² ≈ 0.3) and `total_var = 0.4`
+/// are reasonable for many livestock / aquaculture traits; they
+/// are intentionally rough because AI/EM iterate to the optimum
+/// regardless of starting values, just faster with HE starts than
+/// with these uniform ones.
+///
+/// # When this is used
+///
+/// Only when the user explicitly passes `method = "AI"` or
+/// `method = "EM"` and asks the algorithm to skip the HE
+/// regression. The adaptive cascade in [`adaptive_hi_em`] always
+/// prefers HE-derived starting values over these.
 fn uniform_init(n_random: usize, genetic_prop: f64, total_var: f64) -> Vec<f64> {
     let mut init = Vec::with_capacity(n_random + 1);
     let s2_genetic = total_var * genetic_prop / n_random as f64;

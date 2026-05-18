@@ -58,7 +58,30 @@ fn compute_allele_freq(w_raw: &Array2<f64>) -> Vec<f64> {
         .collect()
 }
 
-/// Apply dominance coding per parallel column
+/// Apply the Da-Wang dominance coding rule to every entry of the
+/// raw `{0, 1, 2}` SNP matrix, in parallel over columns.
+///
+/// # Coding rule (per marker `j` with frequency `p_j`)
+///
+/// ```text
+/// W_raw[i, j] = 0 (AA, homozygous reference)  → -2 · p_j²
+/// W_raw[i, j] = 1 (Aa, heterozygous)          →  2 · p_j · (1 − p_j)
+/// W_raw[i, j] = 2 (aa, homozygous alternate)  → -2 · (1 − p_j)²
+/// ```
+///
+/// Missing values (any code other than 0/1/2) are silently set to 0
+/// — they contribute zero to the dominance G but don't propagate
+/// NaN. This is a deliberate choice: the upstream pipeline filters
+/// missing genotypes before getting here, so any non-{0,1,2} value
+/// represents a data-quality error rather than an expected case.
+///
+/// # Why this coding
+///
+/// Under HWE, `E[W_δ_{i, j}] = 0` by direct expansion:
+/// `p_j² · (-2p_j²) + 2 p_j(1 - p_j) · 2 p_j(1 - p_j) + (1 - p_j)² · (-2(1 - p_j)²)`
+/// simplifies to zero. The coding is therefore "mean-zero by
+/// construction" in the same way as Da's multi-allelic encoding
+/// (see `mh_additive.rs`).
 fn code_w_dominance(w_raw: &Array2<f64>, p: &[f64]) -> Array2<f64> {
     let (n, m) = w_raw.dim();
     let mut w_d = Array2::<f64>::zeros((n, m));

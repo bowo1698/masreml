@@ -88,7 +88,23 @@ impl BlupResult {
         }
     }
 
-    /// Total GEBV = sum across all random effects
+    /// Sum the per-component EBVs into a single total GEBV vector.
+    ///
+    /// The mixed model can split the genetic value across multiple
+    /// relationship matrices (e.g. SNP additive + SNP dominance +
+    /// pedigree A). Each component produces its own EBV vector via
+    /// Henderson's formula `û_i = σ²_i · G_i · P y`. The total
+    /// genomic breeding value of individual `j` is the sum across
+    /// all components:
+    ///
+    /// ```text
+    /// GEBV[j] = Σ_i û_i[j].
+    /// ```
+    ///
+    /// Returns an empty array if no components are present (a
+    /// degenerate case that should not happen in practice but is
+    /// handled defensively so downstream code can rely on a valid
+    /// `Array1` return).
     pub fn total_gebv(&self) -> Array1<f64> {
         if self.gebv.is_empty() {
             return Array1::zeros(0);
@@ -101,13 +117,44 @@ impl BlupResult {
     }
 }
 
-/// Auto-select solver based on n
+/// Pick a solver automatically based on sample size.
+///
+/// # Threshold
+///
+/// `n < 10 000` → `"cholesky"`, `n ≥ 10 000` → `"pcg"`. The crossover
+/// is empirical: at n ≈ 10 000 the memory cost of the dense Cholesky
+/// factor (n² f64s ≈ 800 MB) starts to dominate, and PCG's `O(n²)`
+/// per iteration with low iteration counts becomes more attractive
+/// than the one-time `O(n³)` factorisation.
+///
+/// # Override
+///
+/// The R-side wrapper exposes a `solver` argument that bypasses this
+/// auto-selection: pass `"cholesky"` or `"pcg"` explicitly to pin a
+/// particular solver regardless of `n`. Useful for exact
+/// reproducibility (Cholesky is deterministic; PCG iteration counts
+/// can drift with thread count) or for benchmarking the two paths
+/// on the same data.
 pub fn auto_select_solver(n: usize) -> &'static str {
     const N_THRESHOLD: usize = 10_000;
     if n < N_THRESHOLD { "cholesky" } else { "pcg" }
 }
 
-/// Dispatch to appropriate solver
+/// Top-level solver dispatch.
+///
+/// Honours the user's explicit `solver` argument (`"cholesky"` or
+/// `"pcg"`) or falls back to [`auto_select_solver`] for any other
+/// value (`"auto"`, empty string, etc.). Delegates the actual work
+/// to [`cholesky::solve_cholesky_internal`] or
+/// [`pcg::solve_pcg_internal`].
+///
+/// # Arguments
+///
+/// - `y`, `x`, `g_list`, `sigma2`: standard mixed-model inputs.
+/// - `n`, `n_random`: cached dimension info.
+/// - `max_iter`, `tol`: PCG convergence controls (ignored by
+///   Cholesky).
+/// - `solver`: `"cholesky"`, `"pcg"`, or anything else (auto-select).
 pub fn solve_ebv(
     y: &ndarray::Array1<f64>,
     x: &ndarray::Array2<f64>,

@@ -77,11 +77,40 @@ fn frequency_weighted_row_shrinkage(w: &mut Array2<f64>, freqs: &[f64]) {
 ///   w_ij,k = -2*(1 - p_k)  if individual is homozygous for allele k (i=j=k)
 ///
 /// Input:
-///   hap1, hap2: paternal/maternal haplotype vectors (n), integer allele codes
-///   p: allele frequencies vector
-///   drop_idx: index of most frequent allele to drop
+/// Build the per-locus W_αh sub-matrix for a single haplotype locus.
 ///
-/// Output: W_αh matrix (n x n_alleles-1)
+/// Applies the Da (2015) three-value rule (Eqs. 22-24) to every
+/// individual at this locus, producing an `(n, n_alleles − 1)`
+/// matrix. The most-frequent microhaplotype (index `drop_idx`) is
+/// excluded as the baseline reference — its effect is absorbed by
+/// the model intercept downstream.
+///
+/// # Arguments
+///
+/// - `hap1`, `hap2`: length-`n` phased microhaplotype codes
+///   (paternal and maternal copies).
+/// - `p`: length-`n_alleles` population allele frequencies for the
+///   locus.
+/// - `drop_idx`: 0-based index of the microhaplotype to use as
+///   baseline (typically the most frequent one).
+///
+/// # Output
+///
+/// `(n, n_alleles − 1)` matrix `W_l` with the Da-coded values, ready
+/// for the post-encoding row shrinkage in
+/// [`frequency_weighted_row_shrinkage`].
+///
+/// # Parallelism
+///
+/// The per-individual encoding is fully independent, so this loop
+/// is parallelised over `i` via rayon. Each row writes into its own
+/// disjoint memory location, no synchronisation needed.
+///
+/// # Defensive index handling
+///
+/// Any allele code `≥ n_alleles` (out-of-range / encoding error) is
+/// silently clamped to 0. This shouldn't happen for valid input
+/// but avoids panics if upstream filtering misses a corrupt code.
 fn code_w_mh(
     hap1: &Array1<i32>,
     hap2: &Array1<i32>,
@@ -136,16 +165,49 @@ fn code_w_mh(
     w
 }
 
-/// Build MH additive Agh matrix (Da 2015)
-/// Agh = W_αh * W_αh' / k_αh
-/// k_αh = tr(W_αh * W_αh') / n
+/// Assemble the multi-allelic additive G matrix (Da 2015) from
+/// phased microhaplotype data.
 ///
-/// Input:
-///   hap1: paternal haplotype matrix (n x n_loci), integer allele codes
-///   hap2: maternal haplotype matrix (n x n_loci), integer allele codes
-///   n_alleles_per_locus: number of distinct alleles per locus
+/// # Mathematical definition
 ///
-/// Output: GMatrix { g: n×n, k, n, m }
+/// For each locus `l` we form the per-locus W_αh design `W_l` per
+/// Eqs. 22-24 of Da (2015), apply the frequency-weighted row
+/// shrinkage, and accumulate
+///
+/// ```text
+/// G_{αh}_numerator = Σ_l W_l · W_l',
+/// k_{αh}           = Σ_l tr(W_l · W_l') / n,
+/// G_{αh}           = G_{αh}_numerator / k_{αh}.
+/// ```
+///
+/// The scaling `k_{αh}` normalises so that `mean(diag(G)) ≈ 1 + F̄`
+/// (analogous to VanRaden G for SNP). For GWABLUP a per-locus
+/// weight `d_l` rescales each locus's contribution to both the
+/// numerator and the trace, giving the GWAS-weighted variant.
+///
+/// # Arguments
+///
+/// - `hap1`, `hap2`: `(n, n_loci)` phased microhaplotype codes.
+/// - `n_alleles_per_locus`: number of distinct microhaplotypes per
+///   locus; used to size the per-locus W and choose the baseline.
+/// - `weights`: optional per-locus weights `d_l` (GWABLUP);
+///   `None` ⇒ unweighted.
+/// - `ref_hap1`, `ref_hap2`: optional training haplotype reference;
+///   when provided, allele frequencies and baseline microhaplotype
+///   are computed from these instead of from the input data
+///   (essential for test-set encoding to avoid data leakage).
+///
+/// # Errors
+///
+/// `MatrixError::InvalidDimension` on shape mismatches or when all
+/// loci are monomorphic (so `k_{αh} = 0`).
+///
+/// # Output
+///
+/// `GMatrix` with the normalised `G_{αh}` matrix in `.g`. The
+/// scaling constant `k_{αh}` and per-component bookkeeping are
+/// dropped at this layer because the consumer (REML / BLUP) only
+/// needs the symmetric PD G matrix itself.
 pub fn build_g_mh_add_internal(
     hap1: &Array2<i32>,
     hap2: &Array2<i32>,
@@ -343,10 +405,34 @@ pub fn build_g_mh_add(
     Ok(RMatrix::new_matrix(n, n, |r, c| g_vec[r * n + c]))
 }
 
-/// Build W_αh flat matrix from hap1/hap2
-/// Returns (w_mh, block_sizes)
-/// w_mh: n × total_alleles, columns grouped per block
-/// block_sizes: n_alleles-1 per locus
+/// Build the flat W_αh design matrix used by EMMAX multi-allelic
+/// GWAS.
+///
+/// Unlike `build_g_mh_add_internal`, which assembles `G = W W'` and
+/// then discards the per-locus `W_l` pieces, this function keeps the
+/// full block-stacked `W` matrix so the GWAS scanner can slice out
+/// each block in turn for the joint test in
+/// [`crate::gwas::emmax::run_emmax_mh`].
+///
+/// # Output layout
+///
+/// ```text
+/// w_mh shape: (n, Σ_l (h_l − 1))
+/// columns:    [ block 1's h_1 − 1 columns | block 2's h_2 − 1 columns | … ]
+/// block_sizes: vector of length n_loci, entry l = h_l − 1
+/// ```
+///
+/// The GWAS scanner consumes the `(w_mh, block_sizes)` pair to map
+/// each block back to its column range without re-parsing the
+/// allele frequencies.
+///
+/// # Train / test alignment
+///
+/// `ref_hap1` and `ref_hap2` work the same as in
+/// `build_g_mh_add_internal`: when provided, allele frequencies and
+/// the baseline microhaplotype are computed from the reference
+/// (training) set, ensuring the test-set encoding uses the same
+/// columns and centering.
 pub fn build_w_mh_internal(
     hap1: &Array2<i32>,
     hap2: &Array2<i32>,

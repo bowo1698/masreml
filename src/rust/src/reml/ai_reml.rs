@@ -161,7 +161,49 @@ pub fn run_ai_reml(
     ))
 }
 
-/// Compute gradient vector dL/dtheta
+/// Compute the REML score vector `s = ∂ log L_REML / ∂ θ`.
+///
+/// # Mathematical form
+///
+/// For each genetic component `k` (one `G_k` matrix and its
+/// variance `σ²_k`):
+///
+/// ```text
+/// s_k = −½ · ( tr(P · G_k) − y' P G_k P y ).
+/// ```
+///
+/// The last entry (residual variance) replaces `G_k` with the
+/// identity `I`:
+///
+/// ```text
+/// s_e = −½ · ( tr(P) − y' P² y ).
+/// ```
+///
+/// `P = V⁻¹ − V⁻¹ X (X' V⁻¹ X)⁻¹ X' V⁻¹` is the REML projection
+/// onto the residual subspace. We never form `P` explicitly:
+/// `tr(P G) = tr(V⁻¹ G) − tr((X' V⁻¹ X)⁻¹ X' V⁻¹ G V⁻¹ X)` lets us
+/// evaluate the trace via small auxiliary solves.
+///
+/// # Algorithm
+///
+/// 1. Pre-compute `V⁻¹ X` and `X' V⁻¹ X` once outside the per-G
+///    loop (reused for every component).
+/// 2. For each `G_k`:
+///    - Solve `V⁻¹ G_k`, trace it for `tr(V⁻¹ G_k)`.
+///    - Form the correction `(X' V⁻¹ X)⁻¹ · (X' V⁻¹ G_k V⁻¹ X)`,
+///      trace it.
+///    - Subtract to get `tr(P G_k)`.
+///    - Compute `y' P G_k P y = (P y)' G_k (P y)`.
+///    - Score entry `s_k = −½ · (tr_pg − ytpgipy)`.
+/// 3. Repeat for the residual variance (`G_e = I`), needing
+///    `V⁻¹` itself and `V⁻²` (computed as `V⁻¹ · V⁻¹ X` reused).
+///
+/// # Errors
+///
+/// `RemlError::SingularAI` on any failed linear solve — typically
+/// means `V` or `(X' V⁻¹ X)` became near-singular during the
+/// iteration. The adaptive dispatcher upstream catches this and
+/// can fall back to EM-REML.
 fn compute_gradient(
     v: &Array2<f64>,
     x: &Array2<f64>,
@@ -222,10 +264,38 @@ fn compute_gradient(
     Ok(grad)
 }
 
-/// Compute AI matrix
-/// AI_ij = 0.5 * (Py)' G_i V^-1 G_j (Py)
-/// For residual: AI_ie = 0.5 * (Py)' G_i (Py)
-///               AI_ee = 0.5 * (Py)' (Py)
+/// Compute the **average-information** (AI) matrix used as the
+/// REML curvature approximation in the Newton-style update.
+///
+/// # Mathematical form
+///
+/// The exact observed-information matrix `I` is expensive (requires
+/// second derivatives with traces over `P G_i P G_j`). The expected
+/// information `E[I]` is cheap but only valid at the optimum.
+/// Johnson & Thompson (1995) showed that the **average** of the
+/// two — the AI matrix — is both cheap and yields near-Newton
+/// convergence near the optimum:
+///
+/// ```text
+/// AI_{k, l} = ½ · (P y)' G_k V⁻¹ G_l (P y)        for k, l ≤ n_random,
+/// AI_{k, e} = ½ · (P y)' G_k V⁻¹ (P y),           genetic × residual,
+/// AI_{e, e} = ½ · (P y)' V⁻¹ (P y)                residual × residual.
+/// ```
+///
+/// AI is symmetric positive semi-definite at the optimum, so the
+/// Newton step `Δ = AI⁻¹ · score` is well-defined whenever the
+/// variance components are identifiable.
+///
+/// # Algorithm
+///
+/// 1. Pre-compute `V⁻¹ · (G_i · P y)` for every genetic component;
+///    this gives the `n_random` vectors we will reuse.
+/// 2. Also pre-compute `V⁻¹ · P y` for the residual entries.
+/// 3. Fill the symmetric AI matrix entry by entry; we only compute
+///    the lower triangle and mirror to the upper.
+///
+/// All inner-loop work is `O(n)` vector dots; the `O(n²)` matrix
+/// operations live in step 1's solves.
 fn compute_ai_matrix(
     v: &Array2<f64>,
     py: &Array1<f64>,
@@ -276,8 +346,35 @@ fn compute_ai_matrix(
     Ok(ai)
 }
 
-/// Update sigma2 with step-halving to ensure all values remain positive
-/// and log-likelihood does not decrease
+/// Apply a Newton step `σ² ← σ² + step · Δ` with safeguards to keep
+/// every variance component strictly positive.
+///
+/// # Why step halving
+///
+/// The raw Newton step `Δ = AI⁻¹ · score` can overshoot at the
+/// start of REML iteration (when σ² is far from the optimum) and
+/// drive one or more components negative. Negative variances are
+/// inadmissible under the model, so we halve the step size
+/// repeatedly until every component stays above a small floor.
+///
+/// # Algorithm
+///
+/// ```text
+/// step ← 1.0
+/// for at most 10 halvings:
+///     candidate ← σ² + step · Δ
+///     if all candidate > tol:
+///         return candidate
+///     step ← step / 2
+/// return clipped candidate (max(., 10 · tol) element-wise)
+/// ```
+///
+/// The 10-halving cap (`step` shrinks to 2⁻¹⁰ ≈ 1e-3 in the worst
+/// case) is a defensive upper bound: in practice REML reaches a
+/// positive candidate in 1–3 halvings near the optimum, and only
+/// pathological starting values need more. The final clip-to-floor
+/// is a last-resort safety net so the next AI iteration still has a
+/// well-conditioned V.
 fn update_sigma2_with_step_halving(
     sigma2_old: &[f64],
     delta: &Array1<f64>,

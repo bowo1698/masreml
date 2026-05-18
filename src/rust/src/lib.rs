@@ -71,8 +71,31 @@ use matrix::mh_additive::build_g_mh_add;
 use matrix::pedigree::build_a_ped;
 use reml::adaptive::run_reml;
 
-/// Build SNP additive G matrix (VanRaden)
-/// weights: optional PP_j vector for GWABLUP (NULL = standard GBLUP)
+/// Build the SNP additive genomic relationship matrix (VanRaden 2008).
+///
+/// # Arguments
+///
+/// - `w`: `(n, m)` matrix of raw SNP dosages with entries in `{0, 1, 2}`.
+/// - `weights`: optional length-`m` per-marker weights. `NULL` gives
+///   standard VanRaden G; a non-null vector gives the GWAS-weighted
+///   matrix used by `gwablup()`.
+/// - `allele_freq`: optional length-`m` reference allele frequencies.
+///   `NULL` computes them from `w` itself (training set); pass
+///   training frequencies when encoding a test set to avoid data
+///   leakage.
+///
+/// # Returns
+///
+/// `(n, n)` symmetric positive (semi-)definite G matrix scaled so
+/// that `mean(diag(G)) ≈ 1` under HWE.
+///
+/// # Errors
+///
+/// Returns an R-side error if (a) `w` has non-finite values, (b)
+/// dimensions of `weights` or `allele_freq` don't match `m`, or (c)
+/// every marker is monomorphic (scaling constant `k = 0`).
+///
+/// See [`crate::matrix::snp_additive`] for the underlying math.
 #[extendr]
 fn r_build_g_snp_add(
     w: RMatrix<f64>,
@@ -82,14 +105,52 @@ fn r_build_g_snp_add(
     build_g_snp_add(w, weights, allele_freq)
 }
 
-/// Build SNP dominance D matrix (Da et al. 2014)
+/// Build the SNP dominance D matrix (Da et al. 2014 / Wang & Da 2014).
+///
+/// # Arguments
+///
+/// - `w`: `(n, m)` matrix of raw SNP dosages with entries in
+///   `{0, 1, 2}`. The function computes the dominance encoding
+///   `w_δ_ij` internally — do not pre-compute it on the R side.
+///
+/// # Returns
+///
+/// `(n, n)` symmetric dominance relationship matrix, scaled by
+/// `k_δ = tr(W_δ W_δ') / n`.
+///
+/// See [`crate::matrix::snp_dominance`] for the coding rule and a
+/// discussion of when to fit dominance variance separately.
 #[extendr]
 fn r_build_g_snp_dom(w: RMatrix<f64>) -> Result<RMatrix<f64>> {
     build_g_snp_dom(w)
 }
 
-/// Build MH additive Agh matrix (Da 2015)
-/// weights: optional PP_j vector per locus for GWABLUP (NULL = standard GBLUP)
+/// Build the multi-allelic additive G matrix (Da 2015).
+///
+/// # Arguments
+///
+/// - `hap1`, `hap2`: `(n, n_loci)` integer matrices of phased
+///   microhaplotype allele codes (paternal and maternal).
+/// - `n_alleles`: length-`n_loci` vector giving the number of
+///   distinct microhaplotypes per locus.
+/// - `weights`: optional length-`n_loci` per-locus weights. `NULL`
+///   gives standard MH GBLUP; non-null gives the GWAS-weighted
+///   version (analogous to the SNP case).
+/// - `ref_hap1`, `ref_hap2`: optional reference (training)
+///   haplotype matrices used to derive allele frequencies and
+///   choose baseline microhaplotypes. When `NULL`, frequencies are
+///   computed from `hap1`/`hap2` themselves.
+///
+/// # Returns
+///
+/// `(n, n)` additive G matrix `G_αh / k_αh`. The post-encoding
+/// row shrinkage (see [`crate::matrix::mh_additive`]) is applied
+/// per locus before assembly.
+///
+/// # Errors
+///
+/// Returns an R-side error on shape mismatches or on a degenerate
+/// dataset where all loci are monomorphic.
 #[extendr]
 fn r_build_g_mh_add(
     hap1: RMatrix<i32>,
@@ -102,13 +163,56 @@ fn r_build_g_mh_add(
     build_g_mh_add(hap1, hap2, n_alleles, weights, ref_hap1, ref_hap2)
 }
 
-/// Build pedigree A matrix (Henderson)
+/// Build the pedigree numerator relationship matrix A (Henderson 1976).
+///
+/// # Arguments
+///
+/// - `sire`, `dam`: length-`n` integer vectors with `0` for
+///   unknown parent and 1-based indices into the same pedigree
+///   otherwise. The pedigree **must be topologically pre-sorted**:
+///   every parent index must be smaller than its offspring index.
+///   This precondition is the caller's responsibility; violation
+///   silently produces an incorrect A.
+/// - `n`: number of individuals in the pedigree.
+///
+/// # Returns
+///
+/// `(n, n)` symmetric A matrix. The diagonal carries
+/// `a_ii = 1 + F_i` (inbreeding); off-diagonals carry the
+/// expected fraction of identity-by-descent under the recursion
+/// fixed in v0.4.0.
+///
+/// See [`crate::matrix::pedigree`] for the recursion and the
+/// v0.4.0 bug-fix notes.
 #[extendr]
 fn r_build_a_ped(sire: &[i32], dam: &[i32], n: i32) -> Result<RMatrix<f64>> {
     build_a_ped(sire, dam, n)
 }
 
-/// Run adaptive REML (HE -> AI-REML -> EM-REML fallback)
+/// Run the adaptive REML dispatcher (HE → AI → optional EM
+/// fallback).
+///
+/// # Arguments
+///
+/// - `y`: length-`n` phenotype vector.
+/// - `x`: `(n, c)` fixed-effects design matrix.
+/// - `g_list`: named R list of `(n, n)` relationship matrices. The
+///   list names become the component labels in the output.
+/// - `method`: `"auto"` (default cascade), `"AI"`, `"EM"`, `"HE"`,
+///   or `"HI"` (HE → AI with no EM fallback). See
+///   [`crate::reml::adaptive`] for the cascade details.
+/// - `max_iter`: maximum iterations for AI / EM. HE is single-shot.
+/// - `tol`: convergence tolerance on the max relative change in
+///   variance components.
+/// - `n_threads`: thread pool size for Rayon and OpenBLAS.
+///   `0` or negative ⇒ all available cores.
+///
+/// # Returns
+///
+/// R list with `sigma2`, `h2`, `loglik`, `n_iter`, `algorithm`,
+/// `converged`. On failure the same list shape is returned with an
+/// extra `error` string and null placeholders; check
+/// `converged == TRUE` on the R side to detect this.
 #[extendr]
 fn r_run_reml(
     y: &[f64],
@@ -122,7 +226,35 @@ fn r_run_reml(
     run_reml(y, x, g_list, method, max_iter, tol, n_threads)
 }
 
-/// Solve EBV — auto-selects Cholesky (n < 10k) or PCG (n >= 10k)
+/// Solve the mixed-model equations for BLUP (EBV) given fitted
+/// variance components.
+///
+/// # Arguments
+///
+/// - `y`, `x`, `g_list`: same as `r_run_reml`.
+/// - `sigma2`: length `n_random + 1` variance-component vector from
+///   REML, in the order `(σ²_1, …, σ²_K, σ²_e)`.
+/// - `solver`: `"auto"` (default), `"cholesky"`, or `"pcg"`. Auto
+///   picks Cholesky for `n < 10 000` and PCG otherwise — see
+///   [`crate::solver::auto_select_solver`].
+/// - `max_iter`, `tol`: PCG convergence controls. Ignored when
+///   Cholesky is used (Cholesky is exact, one shot).
+///
+/// # Returns
+///
+/// R list with:
+/// - `fixed_effects`: length-`c` fixed-effect estimates.
+/// - `total_gebv`: summed GEBV across all random-effect components.
+/// - `solver`: which solver actually ran (`"cholesky"` or `"pcg"`).
+/// - `n_iter`: PCG iteration count (`0` for Cholesky).
+/// - One named field per relationship-matrix component, carrying its
+///   per-component EBV vector.
+///
+/// # Errors
+///
+/// Returns an R-side error if (a) `sigma2.len() != n_random + 1`,
+/// (b) V is not positive definite (typically from a negative σ² in
+/// the input), or (c) PCG fails to converge within `max_iter`.
 #[extendr]
 fn r_solve_ebv(
     y: &[f64],
@@ -201,8 +333,32 @@ fn r_solve_ebv(
         .map_err(|e| Error::from(e.to_string()))?)
 }
 
-/// Run EMMAX GWAS for SNP markers
-/// Returns list(lr, beta, se, pval)
+/// Run an EMMAX (Kang et al. 2010) GWAS scan over biallelic SNP
+/// markers using a single pre-factorised V.
+///
+/// # Arguments
+///
+/// - `w`: `(n, m)` centered SNP design matrix (VanRaden coding).
+/// - `y`: length-`n` phenotype vector.
+/// - `x`: `(n, c)` fixed-effects design.
+/// - `sigma2_g`, `sigma2_e`: variance components from a null-model
+///   REML fit (computed once before calling this).
+/// - `g_u`: `(n, n)` genomic relationship matrix.
+///
+/// # Returns
+///
+/// R list with length-`m` numeric vectors:
+/// - `lr`: per-marker likelihood-ratio statistic (`½ · (β̂ / SE)²`).
+/// - `beta`: Wald effect estimate `β̂_j`.
+/// - `se`: standard error of `β̂_j` from the cached Cholesky factor.
+/// - `pval`: chi-squared p-value with df = 1.
+///
+/// # Performance
+///
+/// V is Cholesky-factored once. Each subsequent per-marker test
+/// solves `V⁻¹ x_j` via the cached factor in `O(n²)` instead of
+/// re-factorising in `O(n³)`. Per-marker work is parallelised over
+/// markers via Rayon.
 #[extendr]
 fn r_run_emmax_snp(
     w: RMatrix<f64>,
@@ -255,9 +411,38 @@ fn r_run_emmax_snp(
     ).map_err(|e| Error::from(e.to_string()))?)
 }
 
-/// Run EMMAX GWAS for MH markers
-/// block_sizes: integer vector, n_alleles-1 per block
-/// Returns list(lr, beta, se, pval)
+/// Run an EMMAX GWAS scan over multi-allelic microhaplotype
+/// blocks. The block-level test is the multi-allelic generalisation
+/// of [`r_run_emmax_snp`] — see [`crate::gwas::emmax`] for the
+/// derivation.
+///
+/// # Arguments
+///
+/// - `w`: `(n, p)` flattened W_αh matrix where `p = Σ_b (h_b − 1)`
+///   is the total number of non-baseline microhaplotype columns
+///   across all blocks.
+/// - `block_sizes`: length-`n_blocks` integer vector with the
+///   number of non-baseline microhaplotypes per block (`h_b − 1`).
+///   Used to slice `w` into per-block sub-matrices.
+/// - `y`, `x`, `sigma2_g`, `sigma2_e`, `g_u`: same role as in
+///   `r_run_emmax_snp`.
+///
+/// # Returns
+///
+/// R list with length-`n_blocks` vectors:
+/// - `lr`: per-block likelihood ratio for the joint
+///   `H_0: β_block = 0` (vector hypothesis with df = `h_b − 1`).
+/// - `beta`: aggregated effect-size summary per block
+///   (`||β̂_block||₂`).
+/// - `se`: aggregated standard-error summary per block.
+/// - `pval`: chi-squared p-value with df = `h_b − 1`.
+///
+/// # Why a block-level test
+///
+/// Testing each non-baseline microhaplotype individually loses
+/// power because the block alleles share information — a single
+/// joint test on all `h_b − 1` columns is the optimal score test
+/// when the alternative is "this block has any association".
 #[extendr]
 fn r_run_emmax_mh(
     hap1: RMatrix<i32>,
@@ -327,8 +512,42 @@ fn r_run_emmax_mh(
     ).map_err(|e| Error::from(e.to_string()))?)
 }
 
-/// Smooth LR values and compute posterior probabilities
-/// Returns list(smoothed_lr, pp)
+/// Smooth per-marker / per-block likelihood-ratio statistics and
+/// turn them into posterior probabilities for the GWABLUP pipeline.
+///
+/// # Pipeline
+///
+/// 1. **Moving average** with centred window of size `window`
+///    (`floor(window/2)` markers on each side, shrunk at array
+///    edges with no padding).
+/// 2. **Posterior probability** per marker via Meuwissen et al. (2024):
+///
+///    ```text
+///    PP_j = π · exp(LR_j) / (π · exp(LR_j) + (1 − π))
+///    ```
+///
+///    Implemented in log-odds form for numerical stability:
+///    `logit(PP_j) = LR_j + log(π / (1 − π))`.
+///
+/// # Arguments
+///
+/// - `lr`: per-marker (SNP) or per-block (MH) likelihood-ratio
+///   statistics from `r_run_emmax_snp` / `r_run_emmax_mh`.
+/// - `window`: moving-average window size (typical values 5–20).
+/// - `pi`: prior probability of non-zero effect, in `(0, 1)`.
+///   Typical default `0.001`.
+///
+/// # Returns
+///
+/// R list with two equal-length numeric vectors:
+/// - `smoothed_lr`: the moving-average smoothed LR.
+/// - `pp`: per-marker posterior probability of non-zero effect.
+///
+/// # GWABLUP usage
+///
+/// `pp` is then passed back to `r_build_g_snp_add` /
+/// `r_build_g_mh_add` as the `weights` argument to build the
+/// GWAS-weighted G matrix used downstream by `gwablup()`.
 #[extendr]
 fn r_smooth_and_pp(
     lr: &[f64],

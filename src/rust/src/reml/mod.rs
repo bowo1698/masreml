@@ -66,24 +66,53 @@ impl From<RemlError> for extendr_api::Error {
     }
 }
 
-/// Variance component result from REML
+/// Output of a REML fit.
+///
+/// Carries the fitted variance components and derived heritabilities
+/// together with convergence diagnostics. Returned by every REML
+/// algorithm in this module (HE, AI, EM, adaptive) so the
+/// downstream R wrapper sees a uniform shape regardless of which
+/// path actually ran.
+///
+/// # Fields
+///
+/// - `sigma2`: variance components in order
+///   `(σ²_1, …, σ²_K, σ²_e)`. Length `n_random + 1`.
+/// - `h2`: per-component narrow-sense heritability,
+///   `σ²_k / σ²_phenotype` where `σ²_phenotype = Σ σ²`.
+///   Length `n_random`.
+/// - `loglik`: restricted log-likelihood at the returned `sigma2`.
+/// - `n_iter`: iteration count for AI / EM; `1` for HE (single-shot).
+/// - `algorithm`: which algorithm actually ran. Useful for
+///   diagnostics; values include `"AI"`, `"EM"`, `"HE"`, `"HI"`,
+///   `"HI+EM"`, `"HE+EM"`.
+/// - `converged`: `true` if AI/EM hit the tolerance, `false`
+///   otherwise. HE always returns `true` because it is closed-form.
 #[derive(Debug, Clone)]
 pub struct VarianceComponents {
-    /// Estimated variance components [sigma2_1, ..., sigma2_k, sigma2_e]
+    /// Estimated variance components `[σ²_1, …, σ²_K, σ²_e]`.
     pub sigma2: Vec<f64>,
-    /// Heritability per genetic component: sigma2_i / sigma2_p
+    /// Per-component heritability `σ²_i / σ²_p`. Length `n_random`.
     pub h2: Vec<f64>,
-    /// Log-likelihood at convergence
+    /// Restricted log-likelihood at the returned σ².
     pub loglik: f64,
-    /// Number of iterations to converge
+    /// Iterations to converge (`1` for closed-form HE).
     pub n_iter: usize,
-    /// Algorithm used: "HE", "AI", "EM", "HI"
+    /// Algorithm label: `"HE"`, `"AI"`, `"EM"`, `"HI"`, `"HI+EM"`,
+    /// or `"HE+EM"`.
     pub algorithm: String,
-    /// Convergence achieved
+    /// `true` if convergence tolerance was met.
     pub converged: bool,
 }
 
 impl VarianceComponents {
+    /// Construct from variance components plus diagnostics.
+    ///
+    /// Heritabilities are derived from `sigma2` here so callers
+    /// cannot accidentally pass an inconsistent `h2` vector. The
+    /// definition is `h²_k = σ²_k / Σ σ²` (all components including
+    /// residual go into the denominator), which matches the standard
+    /// narrow-sense heritability used in animal breeding.
     pub fn new(
         sigma2: Vec<f64>,
         loglik: f64,
@@ -91,7 +120,7 @@ impl VarianceComponents {
         algorithm: &str,
         converged: bool,
     ) -> Self {
-        let n_genetic = sigma2.len() - 1; // exclude sigma2_e
+        let n_genetic = sigma2.len() - 1; // exclude σ²_e
         let sigma2_p: f64 = sigma2.iter().sum();
         let h2 = (0..n_genetic)
             .map(|i| sigma2[i] / sigma2_p)
@@ -107,21 +136,43 @@ impl VarianceComponents {
     }
 }
 
-/// Common REML data structure passed across algorithms
+/// Bundle of inputs shared across every REML algorithm in this
+/// module.
+///
+/// Constructed once by the adaptive dispatcher and passed by
+/// reference to HE, AI, and EM. Owning the data here (rather than
+/// re-parsing it inside each algorithm) keeps the algorithm
+/// implementations focused on the math and lets us swap algorithms
+/// (HE → AI → EM fallback) without re-reading R inputs.
+///
+/// # Fields
+///
+/// - `y`: length-`n` phenotype vector.
+/// - `x`: `(n, c)` fixed-effects design.
+/// - `g_list`: per-component relationship matrices, each tagged with
+///   the R-side component label so it can be propagated through to
+///   the BLUP output.
+/// - `n`, `n_random`: cached counts derived from `y` and `g_list`,
+///   stored once so every algorithm sees the same values.
 pub struct RemlData {
-    /// Phenotype vector (n)
+    /// Phenotype vector (length `n`).
     pub y: Array1<f64>,
-    /// Fixed effects design matrix (n x c)
+    /// Fixed-effects design `(n × c)`.
     pub x: Array2<f64>,
-    /// List of genetic relationship matrices [(G1, label), ...]
+    /// `(G_i, label)` tuples, one per random-effect component.
     pub g_list: Vec<(Array2<f64>, String)>,
-    /// Number of individuals
+    /// Number of individuals (matches `y.len()`).
     pub n: usize,
-    /// Number of random effects (genetic components)
+    /// Number of genetic random-effect components (matches `g_list.len()`).
     pub n_random: usize,
 }
 
 impl RemlData {
+    /// Build a `RemlData` and cache the derived counts.
+    ///
+    /// `n` and `n_random` are computed once at construction; the
+    /// algorithm code can then read them as plain fields without
+    /// re-deriving from `y` or `g_list`.
     pub fn new(
         y: Array1<f64>,
         x: Array2<f64>,
@@ -132,8 +183,34 @@ impl RemlData {
         Self { y, x, g_list, n, n_random }
     }
 
-    /// Build V matrix from current variance components
-    /// V = sum_i(G_i * sigma2_i) + I * sigma2_e
+    /// Build the mixed-model variance matrix V from a candidate
+    /// variance-component vector.
+    ///
+    /// # Formula
+    ///
+    /// ```text
+    /// V = Σ_i σ²_i · G_i + σ²_e · I,
+    /// ```
+    ///
+    /// where the σ²_i are the random-effect variances (one per
+    /// `G_i` in `g_list`) and σ²_e is the residual variance (the
+    /// last entry of `sigma2`).
+    ///
+    /// # When V is rebuilt
+    ///
+    /// Every REML iteration that changes σ² rebuilds V via this
+    /// method. AI- and EM-REML re-evaluate the gradient / EM update
+    /// at the new σ² using the new V; HE regression calls `build_v`
+    /// only once, after its closed-form OLS has produced σ²_HE, to
+    /// compute the final log-likelihood for reporting.
+    ///
+    /// # Performance
+    ///
+    /// `O(K · n²)` where `K = n_random`. Each iteration's biggest
+    /// cost is usually the downstream `cholesky(V)` (`O(n³)`), not
+    /// this assembly — but if you ever profile a REML run and see
+    /// `build_v` near the top, that's the signal to switch to a
+    /// lazy / cached V (e.g. by passing `FactorizedV` directly).
     pub fn build_v(&self, sigma2: &[f64]) -> Array2<f64> {
         let sigma2_e = sigma2[self.n_random];
         let mut v = Array2::<f64>::eye(self.n) * sigma2_e;

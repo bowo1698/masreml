@@ -5,17 +5,25 @@ use rayon::prelude::*;
 
 use super::{GMatrix, MatrixError, StdResult};
 
-/// Sum-to-zero constraint for W_αh per locus
-/// Ensures Σ_k p_k * w_ik = 0 for each individual i
-fn project_sum_to_zero(w: &mut Array2<f64>, freqs: &[f64]) {
-    let n     = w.nrows();
+/// Frequency-weighted row shrinkage (per haplotype locus).
+///
+/// Applied after Da (2015) Eqs. 22-24 encoding as a per-row rank-1
+/// deflation along the allele-frequency vector p:
+///     W'_{i,k} = W_{i,k} - p_k * S / F
+/// where S = sum_l p_l W_{i,l} and F = sum_l p_l.
+///
+/// The p-weighted row sum is partially damped to S * (1 - Q/F) 
+/// with Q = sum_l p_l^2. 
+/// function in masbayes (src/rust/src/matrix.rs).
+fn frequency_weighted_row_shrinkage(w: &mut Array2<f64>, freqs: &[f64]) {
+    let n = w.nrows();
     let n_col = w.ncols();
     let freq_sum: f64 = freqs.iter().sum();
-    if freq_sum < 1e-10 { return; }
+    if freq_sum < 1e-10 {
+        return;
+    }
     for i in 0..n {
-        let weighted_sum: f64 = (0..n_col)
-            .map(|k| freqs[k] * w[[i, k]])
-            .sum();
+        let weighted_sum: f64 = (0..n_col).map(|k| freqs[k] * w[[i, k]]).sum();
         for k in 0..n_col {
             w[[i, k]] -= freqs[k] * weighted_sum / freq_sum;
         }
@@ -191,7 +199,7 @@ pub fn build_g_mh_add_internal(
             .filter(|&k| k != drop_idx)
             .map(|k| p[k])
             .collect();
-        project_sum_to_zero(&mut w_l, &kept_freqs);
+        frequency_weighted_row_shrinkage(&mut w_l, &kept_freqs);
 
         // Scale W_l by sqrt(weight) per locus
         // W_l_scaled = W_l * sqrt(d_l)
@@ -367,7 +375,7 @@ pub fn build_w_mh_internal(
             .filter(|&k| k != drop_idx)
             .map(|k| p[k])
             .collect();
-        project_sum_to_zero(&mut w_l, &kept_freqs);
+        frequency_weighted_row_shrinkage(&mut w_l, &kept_freqs);
 
         let n_cols = w_l.ncols();
 

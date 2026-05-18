@@ -33,3 +33,4 @@ src/Makevars.win
 
 # Local-only GitHub release notes drafts
 RELEASE_NOTES_*.txt
+##
